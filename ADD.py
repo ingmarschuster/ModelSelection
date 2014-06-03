@@ -2,7 +2,7 @@
 """
 Created on Sat May 31 07:31:34 2014
 
-@author: arbeit
+@author: Ingmar Schuster
 """
 
 
@@ -29,7 +29,7 @@ class DimensionalityModel:
         self.upper_bound = upper_dim_bound
         self.matr = np.array((1,))
         # our prior belief is that each dimension might be important
-        confidence = 20 # this has to be an int.
+        confidence = 40 # this has to be an int
         self.bin_param = np.array((upper_dim_bound, 1./upper_dim_bound))
         #The following sets the binomial prior to belief in dimensionality 1
         #to a degree determined by 'confidence'
@@ -428,21 +428,25 @@ def test_ADDTwoFactorModel_all():
     return s
     
 
-def test_ADDTwoFactorModel_dim_lvm_wm():
+def test_ADDTwoFactorModel_dim_lvm_wm_laplace():
     from basicmodels import FixMatrixModel
     
     dim_lv = 2
-    dim_obs = 5
+    dim_obs = 6
     upper_bound = dim_obs - 1
     
-    lv = stats.norm(0,1).rvs((50, dim_lv))
+    num_obs = 50
+    
+    lv = stats.norm(0,1).rvs((num_obs, dim_lv))
     w = stats.norm(0,10).rvs((dim_lv, dim_obs))
     data = lv.dot(w)
     
-    lv = np.hstack((lv, stats.norm(0,1).rvs((50, upper_bound - dim_lv))))
+    lv = np.hstack((lv, stats.uniform(0,1).rvs((num_obs, upper_bound - dim_lv))))
     w = np.vstack((w, stats.norm(0,10).rvs((upper_bound - dim_lv, dim_obs))))
     
-    mdl = ADDTwoFactorModel(upper_bound, data, 
+    lvm = MatrixWithComponentPriorModel((num_obs, upper_bound), prior = ("uniform", (0, 1), {}), estimate_mean = False)
+    
+    mdl = ADDTwoFactorModel(upper_bound, data, lv_mdl = lvm,
                               remainvar_mdl = FixMatrixModel(np.eye(dim_obs)),
                               quiet = False)
     s = mdl.sample(data, 50)

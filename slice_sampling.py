@@ -2,7 +2,7 @@
 """
 Created on Fri May 23 15:03:21 2014
 
-@author: arbeit
+@author: Ingmar Schuster
 """
 from __future__ import division, print_function
 import numpy as np
