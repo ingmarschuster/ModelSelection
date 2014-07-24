@@ -25,10 +25,12 @@ import collections
 from slice_sampling import slice_sample_component#, slice_sample_component_double
 
 class AuxVarDimensionalityModel:
-    def __init__(self, upper_dim_bound):
+    def __init__(self, upper_dim_bound,
+                       confidence = 40, # how confident are we that we need few dimensions. This has to be an int
+                       current_dim_callback = None):
+        self.current_dim_callback = current_dim_callback
         self.upper_bound = upper_dim_bound
-        # our prior belief is that each dimension might be important
-        confidence = 40 # this has to be an int
+        # our prior belief is that we should use few dimensions
         self.bin_param = np.array((upper_dim_bound, 1./upper_dim_bound))
         #The following sets the binomial prior to belief in dimensionality 1
         #to a degree determined by 'confidence'
@@ -38,7 +40,11 @@ class AuxVarDimensionalityModel:
         self.glob_mdl = glob_mdl
     
     def get(self):
-        return self.glob_mdl.latent_dim()
+        if self.current_dim_callback != None:
+            return self.current_dim_callback()
+        else:
+            return self.glob_mdl.latent_dim()
+            
     
     def new_dim(self):
         if self.get() >= self.upper_bound:
@@ -98,7 +104,8 @@ def test_AuxVarDimensionalityModel():
     assert(np.sum([dm.new_dim() for i in range(1000)]) == 0)
     lpmfs = [dm.logpmf(i) for i in range(0,dm.upper_bound+1)]
     
-    ## test if prior lies on 1 dimension intitially
+    ## test if model assigns maximum probability to 1 dimension
+    ## before data is taken into account
     assert(np.argmax(lpmfs) == 1)
     
     ## test if prior adapts to new dimensionality
@@ -235,9 +242,9 @@ class ADDAuxVarTwoFactorModel:
             else:
                 log_msg += "; Removing %d " % remove_idx
                 self.__setcache__(cache[remove_idx - 1])
-            ######## END resample dimensionality ########
                 
             self.dim_m.update()
+            ######## END resample dimensionality ########
             
             for i in range(2):
                 for rv in np.random.permutation((self.wm, self.lvm, self.rvm)):
@@ -376,8 +383,8 @@ def test_ADDAuxVarTwoFactorModel_dim_only():
     w = stats.t(2.099999).rvs((dim_lv, dim_obs))
     data = lv.dot(w)
     
-    lv = np.hstack((lv, np.ones((num_obs, upper_bound - dim_lv))))
-    w = np.vstack((w, np.ones((upper_bound - dim_lv, dim_obs))))
+    lv = np.hstack((lv, np.zeros((num_obs, upper_bound - dim_lv))))
+    w = np.vstack((w, np.zeros((upper_bound - dim_lv, dim_obs))))
     
     lv_mdl = FixMatrixModel(lv, var_dim_axis = 1)
     w_mdl  = FixMatrixModel(w, var_dim_axis = 0)
@@ -395,7 +402,7 @@ def test_ADDAuxVarTwoFactorModel_dim_only():
     assert(dim_lv == np.round(np.average([samp.dim_m.get() for samp in s])))
     return s
 
-def test_ADDAuxVarTwoFactorModel_dim_wm():
+def test_ADDAuxVarTwoFactorModel_dim_wm(interleaved_fix_dim_sampling= False):
     from basicmodels import FixMatrixModel
     
     num_obs = 50
@@ -407,7 +414,7 @@ def test_ADDAuxVarTwoFactorModel_dim_wm():
     w = stats.t(2.099999).rvs((dim_lv, dim_obs))
     data = lv.dot(w)
     
-    lv = np.hstack((lv, np.ones((50, upper_bound - dim_lv))))
+    lv = np.hstack((lv, np.zeros((50, upper_bound - dim_lv))))
     
     lv_mdl = FixMatrixModel(lv, var_dim_axis = 1)
     
@@ -417,93 +424,12 @@ def test_ADDAuxVarTwoFactorModel_dim_wm():
     
     mdl = ADDAuxVarTwoFactorModel(upper_bound, data, lv_mdl = lv_mdl,
                               remainvar_mdl = FixMatrixModel(np.eye(dim_obs)),
+                              interleaved_fix_dim_sampling = interleaved_fix_dim_sampling,
                               quiet = False)
     s = mdl.sample(data, 100)
     assert(dim_lv == np.round(np.average([samp.dim_m.get() for samp in s])))
     return s
 
-def test_ADDAuxVarTwoFactorModel_dim_lvm():
-    from basicmodels import FixMatrixModel
-    
-    dim_lv = 2
-    dim_obs = 5
-    upper_bound = dim_obs - 1
-    
-    lv = stats.norm(0,1).rvs((50, dim_lv))
-    w = stats.norm(0,10).rvs((dim_lv, dim_obs))
-    data = lv.dot(w)
-    
-    lv = np.hstack((lv, stats.norm(0,1).rvs((50, upper_bound - dim_lv))))
-    w = np.vstack((w, stats.norm(0,10).rvs((upper_bound - dim_lv, dim_obs))))
-    
-    mdl = ADDAuxVarTwoFactorModel(upper_bound, data, weight_mdl = FixMatrixModel(w, var_dim_axis = 0),
-                              remainvar_mdl = FixMatrixModel(np.eye(dim_obs)),
-                              quiet = False)
-    s = mdl.sample(data, 50)
-    assert(dim_lv == np.round(np.average([samp.dim_m.get() for samp in s])))
-    return s
-   
-def test_ADDAuxVarTwoFactorModel_dim_rv():
-    from basicmodels import FixMatrixModel
-    
-    dim_lv = 2
-    dim_obs = 5
-    upper_bound = dim_obs - 1
-    
-    lv = stats.norm(0,1).rvs((50, dim_lv))
-    w = stats.norm(0,10).rvs((dim_lv, dim_obs))
-    data = lv.dot(w)
-    
-    lv = np.hstack((lv, stats.norm(0,1).rvs((50, upper_bound - dim_lv))))
-    w = np.vstack((w, stats.norm(0,10).rvs((upper_bound - dim_lv, dim_obs))))
-    
-    mdl = ADDAuxVarTwoFactorModel(upper_bound, data, lv_mdl = FixMatrixModel(lv, var_dim_axis = 1),
-                              weight_mdl = FixMatrixModel(w, var_dim_axis = 0),
-                              quiet = False)
-    s = mdl.sample(data, 50)
-    assert(dim_lv == np.round(np.average([samp.dim_m.get() for samp in s])))
-    return s
-
-def test_ADDAuxVarTwoFactorModel_dim_wm_rv():
-    from basicmodels import FixMatrixModel
-    
-    dim_lv = 2
-    dim_obs = 5
-    upper_bound = dim_obs - 1
-    
-    lv = stats.norm(0,1).rvs((50, dim_lv))
-    w = stats.norm(0,10).rvs((dim_lv, dim_obs))
-    data = lv.dot(w)
-    
-    lv = np.hstack((lv, stats.norm(0,1).rvs((50, upper_bound - dim_lv))))
-    w = np.vstack((w, stats.norm(0,10).rvs((upper_bound - dim_lv, dim_obs))))
-    
-    mdl = ADDAuxVarTwoFactorModel(upper_bound, data, lv_mdl = FixMatrixModel(lv, var_dim_axis = 1),
-                              quiet = False)
-    s = mdl.sample(data, 50)
-    assert(dim_lv == np.round(np.average([samp.dim_m.get() for samp in s])))
-    return s
-
-def test_ADDAuxVarTwoFactorModel_dim_lvm_rv():
-    from basicmodels import FixMatrixModel
-    
-    dim_lv = 2
-    dim_obs = 5
-    upper_bound = dim_obs - 1
-    
-    lv = stats.norm(0,1).rvs((50, dim_lv))
-    w = stats.norm(0,10).rvs((dim_lv, dim_obs))
-    data = lv.dot(w)
-    
-    lv = np.hstack((lv, stats.norm(0,1).rvs((50, upper_bound - dim_lv))))
-    w = np.vstack((w, stats.norm(0,10).rvs((upper_bound - dim_lv, dim_obs))))
-    
-    mdl = ADDAuxVarTwoFactorModel(upper_bound, data, weight_mdl = FixMatrixModel(w, var_dim_axis = 0),
-                              quiet = False)
-    s = mdl.sample(data, 50)
-    assert(dim_lv == np.round(np.average([samp.dim_m.get() for samp in s])))
-    return s
-    
     
 def test_ADDAuxVarTwoFactorModel_all(num_obs = 100, num_samples = 100,
                                      dim_lv = 2, dim_obs = 5,
