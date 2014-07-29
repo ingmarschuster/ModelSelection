@@ -154,3 +154,230 @@ class IsotropicRemainingVarModel:
     
     def sample(self, data = None):
         self.var.sample(data)
+        
+
+
+class GlobalTwoFactorModel:
+    def __init__(self, latent_dim,
+                       data,
+                       lv_mdl = None,
+                       weight_mdl = None,
+                       remainvar_mdl = None,
+                       kernel = np.dot,
+                       quiet = False):
+        #observations are expected in colums.
+        if lv_mdl != None:
+            self.lvm = lv_mdl
+        else:
+            self.lvm = MatrixWithComponentPriorModel((data.shape[0], latent_dim),
+                                                     prior =  ("t", (500,), {}),
+                                                     estimate_mean = False)
+        if weight_mdl != None:
+            self.wm = weight_mdl
+        else:
+            self.wm = MatrixWithComponentPriorModel((latent_dim, data.shape[1]),
+                                                    prior =  ("t", (2.099999,), {}),
+                                                    estimate_mean = False)
+
+        if remainvar_mdl != None:
+            self.rvm = remainvar_mdl
+        else:
+            self.rvm = IsotropicRemainingVarModel(data.shape[1])
+        self.kernel = kernel
+        self.lvm.set_global_model(self)
+        self.wm.set_global_model(self)
+        self.rvm.set_global_model(self)
+        self.last_ll = np.infty
+        self.quiet = quiet #Output likelihood in during sampling?
+        self.log_likelihood(data)
+        
+    def sample(self, data = None, num_samples = 1):
+        rval = []        
+        for it in range(num_samples):
+            log_msg = "Iteration " + str(it) +" pre "+ str(self.last_ll)
+            pre_ll = self.last_ll
+            # randomize resampling order to counter selection bias
+            for rv in np.random.permutation((self.rvm, self.wm, self.lvm)):
+                rv.sample(data)
+                log_msg = log_msg + "; sampled "+rv.__class__.__name__+": "+ str(self.last_ll)
+            if not self.quiet:
+                print(log_msg)
+            rval.append(deepcopy(self))
+        return rval
+    
+    def prediction(self, data = None):
+        pred = self.kernel(self.lvm.get(), self.wm.get())
+        if data != None:
+            if data.shape != pred.shape:
+                raise IndexError("Data and Model of different dimensions", data.shape, "vs", pred.shape)
+            else:
+                return pred + np.average(data,0)
+        else:
+            return pred
+   
+
+    def notify(self, data, rv_mdl, idx):
+        (row, col) = idx
+        if rv_mdl == self.lvm:
+            self.pred[row,:] = (self.lvm.get()[row,:].dot(self.wm.get()) + self.data_mean)
+            tmp = np.array([stats.norm(self.pred[row,j], self.rvm.get()[j,j]).logpdf(data[row,j])
+                                               for j in range(self.pred.shape[1])])
+            self.ll_factors[row,:] = tmp
+        elif rv_mdl == self.wm:
+            self.pred[:, col] = (self.kernel(self.lvm.get(), self.wm.get()[:, col]) + self.data_mean[col])
+            self.ll_factors[:, col] = np.array([stats.norm(self.pred[i,col],
+                                                           self.rvm.get()[col,col]).logpdf(data[i,col])
+                                                            for i in range(self.pred[:, col].shape[0])])
+            
+        else:
+            self.ll_factors = np.array( [[stats.norm(self.pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
+                                      for j in range(self.pred.shape[1])]
+                                        for i in range(self.pred.shape[0])])
+        self.last_ll = np.sum(self.ll_factors)
+        
+    def neg_sq_error(self, data):
+        self.recompute_cache(data)
+        self.last_ll = - np.sum((self.pred - (data - self.data_mean))**2)        
+        return self.last_ll
+    
+    def recompute_cache(self, data):
+        self.data_mean = np.average(data,0)
+        self.pred = self.prediction(data)
+        
+        self.ll_factors = np.array( [[stats.norm(self.pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
+                                      for j in range(self.pred.shape[1])]
+                                        for i in range(self.pred.shape[0])])
+        
+        self.last_ll = self.ll_factors.sum()
+        
+    def log_likelihood(self, data):
+        self.recompute_cache(data)
+        return self.last_ll
+    
+    def llike_function(self, data, rv_mdl = None, idx = None):
+        if rv_mdl == None or idx == None:
+            assert(rv_mdl == None and idx == None)
+            ll_full_computation =  lambda: self.log_likelihood(data)
+            return ll_full_computation
+        else:
+            def ll_with_caching():
+                #FIXME: work with presummed loglikelihood, only sum the changes
+                self.notify(data, rv_mdl, idx)
+                return self.last_ll
+            return ll_with_caching
+        
+        if False:
+            if rv_mdl == self.lvm or rv_mdl == self.wm:
+                assert(rv_mdl == self.lvm or rv_mdl == self.wm)
+                (row, col) = idx
+                data_mean = np.average(data,0)
+                pred = self.prediction(data)
+                precomp_ll = 0
+                for i in range(pred.shape[0]):
+                    for j in range(pred.shape[1]):
+                        if ((rv_mdl == self.lvm and i == row) or
+                            (rv_mdl == self.wm and j == col)):
+                            continue
+                        
+                        precomp_ll += stats.norm(pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
+                        
+            
+                if rv_mdl == self.lvm:
+                    def ll_fix_lv_variable():
+                        pred = (self.lvm.get()[row,:].dot(self.wm.get()) + data_mean).flat
+                        self.last_ll = precomp_ll + np.sum([stats.norm(pred[i], self.rvm.get()[i,i]).logpdf(data[row, i])
+                                                            for i in range(len(pred))])
+                                        #multiv_norm_logpdf(, self.lvm.get()[row, :].dot(self.wm.get()) + data_mean,  self.rvm.get())
+                        return self.last_ll
+                    return ll_fix_lv_variable
+                elif rv_mdl == self.wm:
+                    def ll_fix_weight_variable():
+                        pred = (self.kernel(self.lvm.get(), self.wm.get()[:, col]) + data_mean[col]).flat
+                        d = data[:,col].flat
+                        self.last_ll = precomp_ll + np.sum([stats.norm(pred[i], self.rvm.get()[col,col]).logpdf(d[i]) for i in range(len(d))])
+                        return self.last_ll
+                    return ll_fix_weight_variable
+            else:
+                pred = self.prediction(data)
+                def ll_for_remain_var_variable():
+                    self.last_ll = np.sum([stats.  fnorm(pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
+                                           for i in range(pred.shape[0])
+                                           for j in range(pred.shape[1])])
+                    return self.last_ll
+                return ll_for_remain_var_variable
+                
+
+def test_precomputed_ll():
+    rng = np.random.RandomState(42)
+    num_obs = 10
+    dim_obs = 6
+    dim_lv = 3
+    orig_lv = rng.standard_normal((num_obs, dim_lv))
+    orig_w = rng.normal(0, 10, (orig_lv.shape[1], dim_obs))
+    
+    orig_data = orig_lv.dot(orig_w)
+    
+    mdl = GlobalTwoFactorModel(dim_lv, orig_data, quiet = True)
+    unopt_ll = mdl.llike_function(orig_data)
+    opt_lv_ll = mdl.llike_function(orig_data, mdl.lvm, (0,0))
+    opt_w_ll = mdl.llike_function(orig_data, mdl.wm, (0,0))
+    ll = {}
+    for func in (opt_lv_ll, opt_w_ll, unopt_ll):
+        ll[func] = func()
+    print([ll[k] for k in (unopt_ll, opt_lv_ll, opt_w_ll)])
+    assert(np.abs(ll[unopt_ll] - ll[opt_lv_ll]) < 0.001)
+    assert(np.abs(ll[unopt_ll] - ll[opt_w_ll]) < 0.001)
+    
+    orig_lvm = mdl.lvm.matr[0,0]
+    orig_wm = mdl.wm.matr[0,0]
+    
+    for func in (unopt_ll, opt_lv_ll, opt_w_ll):
+        mdl.lvm.matr[0,0] = orig_lvm
+        mdl.recompute_cache(orig_data)
+        mdl.lvm.matr[0,0] = 4
+        ll[func] = func()
+    print([ll[k] for k in (unopt_ll, opt_lv_ll, opt_w_ll)])
+    assert(np.abs(ll[unopt_ll] - ll[opt_lv_ll]) < 0.001)
+    assert(np.abs(ll[unopt_ll] - ll[opt_w_ll]) > 0.001)
+    
+    for func in (unopt_ll, opt_lv_ll, opt_w_ll):
+        mdl.wm.matr[0,0] = orig_wm
+        mdl.recompute_cache(orig_data)
+        mdl.wm.matr[0,0] = 4
+        ll[func] = func()
+    print([ll[k] for k in (unopt_ll, opt_lv_ll, opt_w_ll)])
+    assert(np.abs(ll[unopt_ll] - ll[opt_lv_ll]) > 0.001)
+    assert(np.abs(ll[unopt_ll] - ll[opt_w_ll]) < 0.001)
+ 
+ 
+def test_all(num_obs = 100, num_samples = 100,
+             dim_lv = 2, dim_obs = 5,
+             interleaved_fix_dim_sampling = False,
+             lv_prior = stats.t(500),
+             w_prior = stats.t(2.099999),
+             remvar_prior = stats.gamma(1, scale=1),
+             fix_dim_moves = 0, dim_removed_resamples = 1, dim_added_resamples=1):
+
+    assert(dim_lv < dim_obs)
+    true_lv = lv_prior.rvs((num_obs, dim_lv))
+    true_w = w_prior.rvs((dim_lv, dim_obs))
+    remvar = remvar_prior.rvs((1,1))
+    data = true_lv.dot(true_w)
+    noise_data = data + stats.norm.rvs(0,0.4, size=data.shape)
+    
+
+    lv = stats.norm.rvs(0,lv_prior.var(), size=(num_obs, 1))
+    w = stats.norm.rvs(0,w_prior.var(), size=(1, dim_obs))
+    
+    theta = {"lv": lv, "w": w, "rv": remvar}
+    
+    #llhood = lambda: np.sum(stats.norm(0, theta["rv"]).logpdf(noise_data - theta["lv"].dot(theta["w"])))
+    mdl = GlobalTwoFactorModel(dim_lv, data)
+    samp = mdl.sample(noise_data, num_samples)
+    
+    #print(count_dim(samp), file=sys.stderr)
+
+    return (data, samp)
+
+if __name__ == "__main__":
+    test_all(num_samples=10)

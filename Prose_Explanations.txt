@@ -31,3 +31,10 @@ And AB (or maybe ABB) represents one sample from the complete model.#
 -----
 
 Difference to code review: don't estimate mean of weight-matrix, rather center data (maybe even Z-Score conversion)
+
+
+========================== The naive (a.k.a. Ingmars) approach to trans-dimensional sampling ==========================
+
+For upper bound K on number of dimensions, keep K different states theta^{(1)}, ..., theta^{(K)}. For each possible number of dimensions, run the Markov Chain for a fixed amount of burn-in samples, then draw a fixed amount of samples from the posterior over theta^{(1)}, ..., the posterior over theta^{(K)} to get an initial estimate of marginal likelihood for a given dimensionality (i.e. integrating out/average over theta^{(1)}, ..., theta^{(K)}).
+
+From this point on, draw posterior samples from the dimensionality mixture model, where the probability of drawing from the fixed dimensionality model of dimensionality j is proportional to the marginal likelihood under model j.
