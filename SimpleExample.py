@@ -101,7 +101,10 @@ def sample(theta, lv_prior,
             post_dim = theta["llhood"]
             dim_m.update()
         ######## END resample dimensionality ########
-        post_w = post_lv = post_remvar = post_dim = theta["llhood"]                           
+        post_w = post_lv = post_remvar = post_dim = theta["llhood"]
+        theta["lprior"] = (w_prior.logpdf(theta["w"]).sum() +
+                           lv_prior.logpdf(theta["lv"]).sum() +
+                           remvar_prior.logpdf(theta["rv"]))
         for j in range(fix_dim_moves):        
             slice_sample_all_components(theta["w"], llhood, w_prior)
             post_w = theta["llhood"]
@@ -124,14 +127,69 @@ def count_dim(samp):
         c[i] = dimensions.count(i)
     return c
 
+def marginal_posterior_likelihood(samp):
+    for cand in samp:
+        print("%d, %f" % (samp[cand][-1]["lv"].shape[1], np.average([s["llhood"] for s in samp[cand]])), file=sys.stderr)
+
+def marginal_likelihood_harmonic(samp, trace = False):
+    def harmonic_log_mean(llhoods):
+        return log(np.prod(llhoods.shape)) - logsumexp(-llhoods)
+    rval = {}
+    for cand in samp:
+        llhoods = np.array([s["llhood"] for s in samp[cand]])
+        if trace:
+            rval[cand] = ([harmonic_log_mean(llhoods[:i]) for i in range(1,len(samp[cand])+1)])
+        else:
+            rval[cand] = harmonic_log_mean(llhoods)
+    return rval
+
+def marginal_likelihood_p4(samp, trace = False, iterations=1):
+    def p4(llhoods, loginit, delta, iterations=1):
+        ldelt = log(delta)
+        converse_ldelt = log(1-delta)
+        lnum_samp = log(len(llhoods))
+        num = logsumexp([ldelt+lnum_samp-converse_ldelt,
+                         logsumexp([ll-logsumexp([ldelt+loginit, converse_ldelt + ll]) for ll in llhoods])])
+        denom = logsumexp([ldelt + lnum_samp + loginit - converse_ldelt,
+                           logsumexp([- logsumexp([ldelt+loginit, converse_ldelt+ll]) for ll in llhoods ])])
+        estimate = num - denom
+        if iterations <= 1:
+            return estimate
+        else:
+            return p4(llhoods, estimate, delta, iterations = iterations - 1)
+    rval = {}   
+    for cand in samp:
+        llhoods = np.array([s["llhood"] for s in samp[cand]])
+        if trace:
+            rval[cand] = ([p4(llhoods[:i], 0, 0.1, iterations = iterations) for i in range(1,len(samp[cand])+1)])
+        else:
+            rval[cand] = p4(llhoods,0, 0.1, iterations = iterations)
+    if trace:
+        return rval
+        
+def marginal_likelihood_naive(samp, trace = False):
+    def naive(log_lhood_prior):
+        mult = log_lhood_prior.sum(1)
+        assert(log_lhood_prior.shape == (2,2) or np.prod(mult.shape) != 2)
+        return logsumexp(log_lhood_prior.sum(1))
+    rval = {}
+    for cand in samp:
+        log_lhood_prior = np.array([(s["llhood"], s["lprior"])  for s in samp[cand]])
+        if trace:
+            rval[cand] = ([naive(log_lhood_prior[:i, :]) for i in range(1,len(samp[cand])+1)])
+        else:
+            rval[cand] = naive(log_lhood_prior)
+    return rval
+    
+
 def test_all(num_obs = 100, num_samples = 100,
              dim_lv = 2, dim_obs = 5,
              interleaved_fix_dim_sampling = False,
              lv_prior = stats.t(500),
              w_prior = stats.t(2.099999),
              remvar_prior = stats.gamma(1, scale=1),
-             fix_dim_moves = 0, trans_dim = True,
-             dim_removed_resamples = 1, dim_added_resamples=1):
+             fix_dim_moves = 1, trans_dim = False,
+             dim_removed_resamples = 0, dim_added_resamples = 0):
 
     assert(dim_lv < dim_obs)
     true_lv = lv_prior.rvs((num_obs, dim_lv))
@@ -158,9 +216,13 @@ def test_all(num_obs = 100, num_samples = 100,
         theta["lv"] = stats.norm.rvs(0,lv_prior.var(), size=(num_obs, cand))
         theta["w"] = stats.norm.rvs(0,w_prior.var(), size=(cand, dim_obs))
         samp[cand] = sample(theta, lv_prior, w_prior, remvar_prior, dim_m,
-                            llhood, num_samples, fix_dim_moves = fix_dim_moves, trans_dim=trans_dim, dim_removed_resamples = dim_removed_resamples, dim_added_resamples=dim_added_resamples)
+                            llhood, num_samples, fix_dim_moves = fix_dim_moves, trans_dim=False, dim_removed_resamples = dim_removed_resamples, dim_added_resamples=dim_added_resamples)
     
-    print([(cand, np.average([s["llhood"] for s in samp[cand]])) for cand in samp], file=sys.stderr)
 
-    return (data, samp)
+    marg = {"harmonic" : marginal_likelihood_harmonic(samp, trace=True),
+            "p4" : marginal_likelihood_p4(samp, trace=True),
+            "naive": marginal_likelihood_naive(samp, trace=True)}
+    
+
+    return {"data": data, "samp" : samp, "marg" : marg}
     
