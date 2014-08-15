@@ -108,6 +108,8 @@ def sample(theta, lv_prior,
                 theta["lv"] = orig_model["lv"]
                 theta["rv"] = orig_model["rv"]
                 current_dims = orig_dims
+                slice_sample_all_components(theta["w"], llhood, w_prior)
+                slice_sample_all_components(theta["lv"], llhood, lv_prior)
         
         dim_m.update()
         ######## END resample dimensionality ########
