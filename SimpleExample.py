@@ -180,7 +180,21 @@ def marginal_likelihood_naive(samp, trace = False):
         else:
             rval[cand] = naive(log_lhood_prior)
     return rval
+
+def plot_traces(traces):
+    from matplotlib.pyplot import *
     
+    plot(traces["harmonic"][2], "g.-",
+         traces["harmonic"][3], "g-",
+         traces["harmonic"][4], "g--",
+
+         traces["p4"][2], "b.-",
+         traces["p4"][3], "b-",
+         traces["p4"][4], "b--",
+
+         traces["naive"][2], "r.-",
+         traces["naive"][3], "r-",
+         traces["naive"][4], "r--")
 
 def test_all(num_obs = 100, num_samples = 100,
              dim_lv = 2, dim_obs = 5,
