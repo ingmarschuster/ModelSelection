@@ -27,28 +27,35 @@ def sample(theta, data, lv_prior,
         
     rval = []
     pre_llhood = theta["model"][theta["idx"]]["llhood"]
+    count = 0
     for i in range(num_samples):
+        
         print("## Sample %d; \n" % i, file=sys.stderr)
-        idx_cur = theta["idx"]
-        cur = theta["model"][idx_cur]
-        candidates = theta["model"].keys()
-        candidates.remove(idx_cur) #- dont remove current 
-        # - thus sometimes the current model is resampled
-        idx_prop = np.random.permutation(candidates)[0]
-        prop = theta["model"][idx_prop]
-        llhood = llhood_closure(data, prop)
-        slice_sample_all_components(prop["w"], llhood, w_prior)
-        slice_sample_all_components(prop["lv"], llhood, lv_prior)
-        slice_sample_all_components(prop["rv"], llhood, remvar_prior)
-        if stats.bernoulli.rvs(exp(min((0, prop["llhood"]- cur["llhood"])))) == 1:
-            print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
-            theta["idx"] = idx_prop
+        if count < 10:
+            idx_cur = theta["idx"]
+            cur = theta["model"][idx_cur]
+            candidates = theta["model"].keys()
+            candidates.remove(idx_cur) #- dont remove current 
+            # - thus sometimes the current model is resampled
+            idx_prop = np.random.permutation(candidates)[0]
+            prop = theta["model"][idx_prop]
+            llhood = llhood_closure(data, prop)
+            slice_sample_all_components(prop["w"], llhood, w_prior)
+            slice_sample_all_components(prop["lv"], llhood, lv_prior)
+            slice_sample_all_components(prop["rv"], llhood, remvar_prior)
+            if stats.bernoulli.rvs(exp(min((0, prop["llhood"]- cur["llhood"])))) == 1:
+                print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
+                theta["idx"] = idx_prop
+            else:
+                print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
+                llhood = llhood_closure(data, cur)
+            count = count + 1
         else:
-            print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
-            llhood = llhood_closure(data, cur)
-            slice_sample_all_components(cur["w"], llhood, w_prior)
-            slice_sample_all_components(cur["lv"], llhood, lv_prior)
-            slice_sample_all_components(cur["rv"], llhood, remvar_prior)
+            count = 0
+            candidates = theta["model"].keys()
+            idx_prop = np.random.permutation(candidates)[0]
+            print("move to %d" % (idx_prop), file=sys.stderr)
+            theta["idx"] = idx_prop
         print("Model %d\n\n" % theta["idx"], file=sys.stderr)
         rval.append(deepcopy(theta))
         
