@@ -28,24 +28,25 @@ def sample(theta, data, lv_prior,
     rval = []
     pre_llhood = theta["model"][theta["idx"]]["llhood"]
     for i in range(num_samples):
-        print("## Sample %d; \n\n" % i, file=sys.stderr)
+        print("## Sample %d; \n" % i, file=sys.stderr)
         idx_cur = theta["idx"]
         cur = theta["model"][idx_cur]
         candidates = theta["model"].keys()
-        candidates.remove(idx_cur)
+        #candidates.remove(idx_cur) - dont remove current 
+        # - thus sometimes the current model is resampled
         idx_prop = np.random.permutation(candidates)[0]
         prop = theta["model"][idx_prop]
         for c in (prop,):
-            print("proposed %d; \n" % idx_prop, file=sys.stderr)
             llhood = llhood_closure(data, prop)
             slice_sample_all_components(prop["w"], llhood, w_prior)
             slice_sample_all_components(prop["lv"], llhood, lv_prior)
             slice_sample_all_components(prop["rv"], llhood, remvar_prior)
         if stats.bernoulli.rvs(exp(min((0, prop["llhood"]- cur["llhood"])))) == 1:
-            print("accepted", file=sys.stderr)
+            print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
             theta["idx"] = idx_prop
         else:
-            print("rejected", file=sys.stderr)
+            print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
+        print("Model %d\n\n" % theta["idx"], file=sys.stderr)
         rval.append(deepcopy(theta))
         
     return rval
@@ -96,7 +97,7 @@ def test_all(num_obs = 100, num_samples = 100,
         m["lprior"] = 0
         llhood = llhood_closure(noise_data, m)
         
-        for _ in range(200):        
+        for _ in range(2):        
             slice_sample_all_components(m["w"], llhood, w_prior)
             slice_sample_all_components(m["lv"], llhood, lv_prior)
             slice_sample_all_components(m["rv"], llhood, remvar_prior)
