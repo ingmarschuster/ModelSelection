@@ -5,12 +5,13 @@ Created on Mon Jul 21 11:21:00 2014
 @author: arbeit
 """
 from __future__ import division, print_function
-import numpy as np
-import datetime
-import numpy.random as npr
-import scipy.stats as stats
 from numpy import exp, log
 from scipy.misc import logsumexp
+import numpy as np
+import scipy.stats as stats
+
+import datetime
+import numpy.random as npr
 from copy import deepcopy,copy
 import pickle
 import sys
@@ -61,10 +62,10 @@ def sample(theta, lv_prior,
                 current_dims += 1
                 dim_log = "Insert at %d; " % i
                 theta["w"] = np.insert(theta["w"], i,
-                                       np.zeros((theta["w"].shape[1], )),
+                                       w_prior.rvs((theta["w"].shape[1], )),
                                        axis=0)
                 theta["lv"] = np.insert(theta["lv"], i,
-                                       np.zeros((theta["lv"].shape[0], )),
+                                       lv_prior.rvs((theta["lv"].shape[0], )),
                                        axis=1)
                 for _ in range(dim_added_resamples):        
                     slice_sample_all_components(theta["w"], llhood, w_prior)
@@ -96,7 +97,7 @@ def sample(theta, lv_prior,
                            lv_prior.logpdf(theta["lv"]).sum() +
                            remvar_prior.logpdf(theta["rv"]).sum())            
             
-            ratio = orig_lprior + orig_llhood - prop_lprior - prop_llhood
+            ratio = prop_lprior + prop_llhood - orig_lprior - orig_llhood
             #dim_log += "%f, %f" % (exp(ratio), np.min((1, exp(ratio))))
             
             if stats.bernoulli.rvs(exp(np.min((0, ratio)))) == 1:
@@ -108,8 +109,6 @@ def sample(theta, lv_prior,
                 theta["lv"] = orig_model["lv"]
                 theta["rv"] = orig_model["rv"]
                 current_dims = orig_dims
-                slice_sample_all_components(theta["w"], llhood, w_prior)
-                slice_sample_all_components(theta["lv"], llhood, lv_prior)
         
         dim_m.update()
         ######## END resample dimensionality ########
