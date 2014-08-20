@@ -37,7 +37,9 @@ def sample(theta, data, lv_prior,
             candidates = theta["model"].keys()
             #candidates.remove(idx_cur) #- dont remove current 
             # - thus sometimes the current model is resampled
-            idx_prop = np.random.permutation(candidates)[0]
+            cand_lprob = np.array([1] * len(candidates))
+            cand_lprob -= logsumexp(cand_lprob)
+            idx_prop = candidates[np.argmax(np.random.multinomial(1, exp(cand_lprob)))]
             prop = theta["model"][idx_prop]
             llhood = llhood_closure(data, prop)
             slice_sample_all_components(prop["w"], llhood, w_prior)
