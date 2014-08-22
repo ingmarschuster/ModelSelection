@@ -27,7 +27,7 @@ def sample(theta, data, lv_prior,
         
     rval = []
     pre_llhood = theta["model"][theta["idx"]]["llhood"]
-    count = -1
+    count = 0
     for i in range(num_samples):
         
         print("## Sample %d; \n" % i, file=sys.stderr)
@@ -109,7 +109,7 @@ def test_all(num_obs = 100, num_samples = 100,
         m["lprior"] = 0
         llhood = llhood_closure(noise_data, m)
         
-        for _ in range(2):        
+        for _ in range(100):        
             slice_sample_all_components(m["w"], llhood, w_prior)
             slice_sample_all_components(m["lv"], llhood, lv_prior)
             slice_sample_all_components(m["rv"], llhood, remvar_prior)
