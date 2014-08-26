@@ -45,17 +45,37 @@ def sample(theta, data, lv_prior,
             slice_sample_all_components(prop["w"], llhood, w_prior)
             slice_sample_all_components(prop["lv"], llhood, lv_prior)
             slice_sample_all_components(prop["rv"], llhood, remvar_prior)
-            if stats.bernoulli.rvs(exp(min((0, prop["llhood"]- cur["llhood"])))) == 1:
+            orig_dim_move_accept_logprob = min((0, prop["llhood"]- cur["llhood"]))
+            if stats.bernoulli.rvs(exp(orig_dim_move_accept_logprob)) == 1:
                 print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
                 theta["idx"] = idx_prop
             else:
                 print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
+                
+                #propose resampled current dimension
+                orig = deepcopy(cur)
+                
+                llhood = llhood_closure(data, cur)
+                slice_sample_all_components(cur["w"], llhood, w_prior)
+                slice_sample_all_components(cur["lv"], llhood, lv_prior)
+                slice_sample_all_components(cur["rv"], llhood, remvar_prior)
+                
+                resamp_dim_move_accept_logprob = min((0, prop["llhood"]- cur["llhood"]))
+                resamp_logratio = (  logsumexp([1,-resamp_dim_move_accept_logprob])
+                                   - logsumexp([1,-orig_dim_move_accept_logprob]) )
+                                   
+                if stats.bernoulli.rvs(exp(min([0, resamp_logratio]))) == 1:
+                    print("- accepted resample move for %d" % (idx_cur), file=sys.stderr)
+                else:
+                    print("- rejected resample move for %d" % (idx_cur), file=sys.stderr)
+                    theta["model"][idx_cur] = orig
             if count >= 0:
                 count = count + 1
         else:
             count = 0
-            candidates = theta["model"].keys()
-            idx_prop = np.random.permutation(candidates)[0]
+            cand_lprob = np.array([1] * len(candidates))
+            cand_lprob -= logsumexp(cand_lprob)
+            idx_prop = candidates[np.argmax(np.random.multinomial(1, exp(cand_lprob)))]
             print("move to %d" % (idx_prop), file=sys.stderr)
             theta["idx"] = idx_prop
         print("Model %d\n\n" % theta["idx"], file=sys.stderr)
@@ -109,7 +129,7 @@ def test_all(num_obs = 100, num_samples = 100,
         m["lprior"] = 0
         llhood = llhood_closure(noise_data, m)
         
-        for _ in range(100):        
+        for _ in range(1):        
             slice_sample_all_components(m["w"], llhood, w_prior)
             slice_sample_all_components(m["lv"], llhood, lv_prior)
             slice_sample_all_components(m["rv"], llhood, remvar_prior)
