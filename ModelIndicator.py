@@ -19,6 +19,38 @@ from slice_sampling import slice_sample_all_components
 from ADDAuxVar import AuxVarDimensionalityModel
 
 
+class MatrixFact:
+    def __init__(self, num_obs = 100,
+             dim_lv = 2, dim_obs = 5,
+             lv_prior = stats.t(500),
+             w_prior = stats.t(2.099999),
+             remvar_prior = stats.gamma(1, scale=1)):
+        m = {}
+        m["lv"] = stats.norm.rvs(0,lv_prior.var(), size=(num_obs, cand))
+        m["w"] = stats.norm.rvs(0,w_prior.var(), size=(cand, dim_obs))
+        m["rv"] =  remvar_prior.rvs((1,1))
+        m["llhood"] = 0
+        m["lprior"] = 0
+        
+        self.dim_lv = dim_lv
+        self.dim_obs = dim_obs
+        self.lv_prior = lv_prior
+        self.w_prior = w_prior
+        self.remvar_prior = remvar_prior
+        self.m = m
+        
+    def __getstate__(self):
+        rval = self.__dict__.copy()
+        rval["m"] = self.m.copy()
+        for rand_var in ("lv","w", "rv"):
+            rval["m"][rand_var] = self.__dict__["m"][rand_var].copy()
+        return rval
+        
+    def deepcopy(self):
+        rval = MatrixFact()
+        rval.__setstate__(self.__getstate__())
+        return rval
+
 def sample(theta, data, lv_prior,
            w_prior,
            remvar_prior,
@@ -27,7 +59,7 @@ def sample(theta, data, lv_prior,
         
     rval = []
     pre_llhood = theta["model"][theta["idx"]]["llhood"]
-    count = 0
+    count = -10
     for i in range(num_samples):
         
         print("## Sample %d; \n" % i, file=sys.stderr)
@@ -40,16 +72,35 @@ def sample(theta, data, lv_prior,
             cand_lprob = np.array([1] * len(candidates))
             cand_lprob -= logsumexp(cand_lprob)
             idx_prop = candidates[np.argmax(np.random.multinomial(1, exp(cand_lprob)))]
+            idx_nprop = [k for k in candidates if k != idx_prop]
             prop = theta["model"][idx_prop]
+            prop_orig = deepcopy(prop)
+            
             llhood = llhood_closure(data, prop)
             slice_sample_all_components(prop["w"], llhood, w_prior)
             slice_sample_all_components(prop["lv"], llhood, lv_prior)
             slice_sample_all_components(prop["rv"], llhood, remvar_prior)
-            orig_dim_move_accept_logprob = min((0, prop["llhood"]- cur["llhood"]))
+            prop["lprior"] = (w_prior.logpdf(prop["w"]).sum() +
+                              lv_prior.logpdf(prop["lv"]).sum() +
+                              remvar_prior.logpdf(prop["rv"]).sum())
+            print(candidates, idx_prop, idx_nprop, file=sys.stderr)
+            other_lpost = logsumexp([theta["model"][k]["lprior"] + theta["model"][k]["llhood"] 
+                                         for k in idx_nprop])
+            numer = logsumexp((other_lpost - prop["llhood"], -log(len(candidates))))
+            denom = logsumexp((other_lpost - prop_orig["llhood"], -log(len(candidates))))
+            
+            if stats.bernoulli.rvs(exp(min((0, numer - denom)))) == 1:
+                print("resampling for %d accepted" % (idx_prop), file=sys.stderr)
+            else:
+                print("resampling for %d NOT accepted" % (idx_prop), file=sys.stderr)
+                prop = theta["model"][idx_prop] = prop_orig
+                
+               
+            orig_dim_move_accept_logprob = min((0, prop["llhood"] - cur["llhood"]))
             if stats.bernoulli.rvs(exp(orig_dim_move_accept_logprob)) == 1:
                 print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
                 theta["idx"] = idx_prop
-            else:
+            elif False:
                 print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
                 
                 #propose resampled current dimension
@@ -63,7 +114,7 @@ def sample(theta, data, lv_prior,
                 resamp_dim_move_accept_logprob = min((0, prop["llhood"]- cur["llhood"]))
                 resamp_logratio = (  logsumexp([1,-resamp_dim_move_accept_logprob])
                                    - logsumexp([1,-orig_dim_move_accept_logprob]) )
-                                   
+                                  
                 if stats.bernoulli.rvs(exp(min([0, resamp_logratio]))) == 1:
                     print("- accepted resample move for %d" % (idx_cur), file=sys.stderr)
                 else:
@@ -103,11 +154,9 @@ def llhood_closure(data, model_candidate):
     
 def test_all(num_obs = 100, num_samples = 100,
              dim_lv = 2, dim_obs = 5,
-             interleaved_fix_dim_sampling = False,
              lv_prior = stats.t(500),
              w_prior = stats.t(2.099999),
-             remvar_prior = stats.gamma(1, scale=1),
-             fix_dim_moves = 0, dim_removed_resamples = 1, dim_added_resamples=1):
+             remvar_prior = stats.gamma(1, scale=1)):
 
     assert(dim_lv < dim_obs)
     
@@ -133,7 +182,9 @@ def test_all(num_obs = 100, num_samples = 100,
             slice_sample_all_components(m["w"], llhood, w_prior)
             slice_sample_all_components(m["lv"], llhood, lv_prior)
             slice_sample_all_components(m["rv"], llhood, remvar_prior)
-    
+        m["lprior"] = (w_prior.logpdf(m["w"]).sum() +
+                       lv_prior.logpdf(m["lv"]).sum() +
+                       remvar_prior.logpdf(m["rv"]).sum())
     samp = sample(theta, data, lv_prior, w_prior, remvar_prior, num_samples)
     
     print(count_dim(samp), file=sys.stderr)
