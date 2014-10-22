@@ -1,0 +1,3 @@
+[submodule "sobol"]
+	path = sobol
+	url = git@github.com:naught101/sobol_seq.git
