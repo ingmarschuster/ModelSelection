@@ -2,7 +2,7 @@
 """
 Created on Wed Oct 22 11:14:34 2014
 
-@author: arbeit
+@author: Ingmar Schuster
 """
 
 from __future__ import division, print_function
@@ -68,37 +68,47 @@ evid2 = analytic_logevidence(D, mu_pr2, s2_pr2, s2_li)
 print("Analytic evidence model 1", evid1)
 print("Analytic evidence model 2", evid2)
 
-## Sample from the posterior ##
+## Sample from and fit gaussians to the posteriors ##
 num_post_samples = 1000
 
 samp_post1 = sample_params(num_post_samples, D, mu_pr1, s2_pr1, s2_li)
-gaus_fit1 = stats.norm.fit(samp_post1)
+param_fit1 = stats.norm.fit(samp_post1)
+fit1 = stats.norm(param_fit1[0], param_fit1[1])
 
 samp_post2 = sample_params(num_post_samples, D, mu_pr2, s2_pr2, s2_li)
-gaus_fit2 = stats.norm.fit(samp_post2)
+param_fit2 = stats.norm.fit(samp_post2)
+fit2 = stats.norm(param_fit2[0], param_fit2[1])
 
 
-print("Fitted and posterior params 1", gaus_fit1)
-print("Fitted and posterior params 2", gaus_fit2)
+print("Fitted and posterior params 1", param_fit1)
+print("Fitted and posterior params 2", param_fit2)
 
-## Now for QMC-Sampling from distributions defined by gaus_fit1 and gaus_fit2
+## Now for QMC-Sampling from distributions defined by param_fit1 and param_fit2
 ## and importance approximation of evidence
 
 num_qmc_samples = 1000
 
-lowdisc_seq = i4_sobol_generate(1, num_qmc_samples + 2, 2)
+lowdisc_seq = i4_sobol_generate(1, num_qmc_samples + 2, 2).flat[:]
 
-imp_samp1 =  stats.norm.ppf(lowdisc_seq, gaus_fit1[0], gaus_fit1[1]).flat[:]
-imp_samp2 =  stats.norm.ppf(lowdisc_seq, gaus_fit2[0], gaus_fit2[1]).flat[:]
+# draw quasi importance samples using the percent point function (PPF, aka quantile function)
+# where cdf^-1 = ppf 
+imp_samp1 =  fit1.ppf(lowdisc_seq)
+imp_samp2 =  fit2.ppf(lowdisc_seq)
 
-imp_w1 = (pr1.logpdf(imp_samp1)
-          + np.array([stats.norm.logpdf(D, samp, s2_li).sum()
-                      for samp in imp_samp1])) - stats.norm.logpdf(imp_samp1.flat, gaus_fit1[0], gaus_fit1[1])
+imp_w1 = ((pr1.logpdf(imp_samp1) # log prior of samples
+           + np.array([stats.norm.logpdf(D, mean, s2_li).sum()
+                           for mean in imp_samp1])) # log likelihood of samples
+            - fit1.logpdf(imp_samp1) # log pdf of proposal distribution
+         )
+# normalized importance weights in case we need them:
 imp_w_norm1 = imp_w1 - logsumexp(imp_w1)
 
-imp_w2 =  (pr2.logpdf(imp_samp2)
-          + np.array([stats.norm.logpdf(D, samp, s2_li).sum()
-                      for samp in imp_samp2])) - stats.norm.logpdf(imp_samp2.flat, gaus_fit2[0], gaus_fit2[1])
+imp_w2 =  ((pr2.logpdf(imp_samp2) # log prior of samples
+            + np.array([stats.norm.logpdf(D, mean, s2_li).sum()
+                            for mean in imp_samp2])) # log likelihood of samples
+            - fit2.logpdf(imp_samp2) # log pdf of proposal distribution
+          )
+# normalized importance weights in case we need them:
 imp_w_norm2 = imp_w2 - logsumexp(imp_w2)
 
 print("QMC-IS estimate of evidence model 1:", logsumexp(imp_w1)-log(len(imp_w1)))
