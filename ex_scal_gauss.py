@@ -80,8 +80,8 @@ param_fit2 = stats.norm.fit(samp_post2)
 fit2 = stats.norm(param_fit2[0], param_fit2[1])
 
 
-print("Fitted and posterior params 1", param_fit1)
-print("Fitted and posterior params 2", param_fit2)
+print("Fitted posterior params 1", param_fit1)
+print("Fitted posterior params 2", param_fit2)
 
 ## Now for QMC-Sampling from distributions defined by param_fit1 and param_fit2
 ## and importance approximation of evidence
