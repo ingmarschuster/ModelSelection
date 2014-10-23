@@ -21,7 +21,7 @@ import collections
 
 
 
-def slice_sample_component(rv, idx, log_likelihood, prior, cur_ll = None, width = None, max_steps = 10):
+def slice_sample_component(rv, idx, log_likelihood, prior, cur_ll = None, width = None, max_steps = 10, left = None, right = None):
     #rv: Matrix, deren Komponentnen gesampled werden sollen
     
     #idx: indices der Komponente, die gesampled werden sollen, für komponente 0,0: idx =([0],[0])
@@ -64,13 +64,26 @@ def slice_sample_component(rv, idx, log_likelihood, prior, cur_ll = None, width 
             except:
                 # prior might not have the var() method
                 width = 1.
-        left = rv[idx] -  npr.uniform(0, width)
-        right = left + width
-        
-        rv[idx] = left                    
-        left_log_post = log_likelihood() + prior.logpdf(left)
-        rv[idx] = right
-        right_log_post = log_likelihood() + prior.logpdf(right)
+        if left != None:
+            assert(right != None)
+                                
+            left_log_post = prior.logpdf(left)
+            if left_log_post > -np.inf:
+                rv[i] = left
+                left_log_post = left_log_post + log_likelihood()
+            right_log_post =  prior.logpdf(right)
+            if right_log_post > -np.inf:
+                rv[i] = right
+                right_log_post = right_log_post + log_likelihood()
+            max_steps = -10
+        else:
+            left = rv[idx] -  npr.uniform(0, width)
+            right = left + width
+            
+            rv[idx] = left                    
+            left_log_post = log_likelihood() + prior.logpdf(left)
+            rv[idx] = right
+            right_log_post = log_likelihood() + prior.logpdf(right)
 
         aux = cur_log_post + np.log(npr.rand(1)) #auxiliary variable called 'u' in Bishops "Pattern Recognition and Machine Learning", Section 11.4
         while True:
@@ -169,7 +182,7 @@ def slice_acceptable_doubling(rv, idx, cur, cand, aux, left, right, log_likeliho
             return False
     return True
 
-def slice_sample_component_double(rv, idx, log_likelihood, prior, cur_ll = None, width = None):
+def slice_sample_component_double(rv, idx, log_likelihood = None, prior = None, logpost = None, cur_ll = None, width = None):
     #rv: Matrix, deren Komponentnen gesampled werden sollen
     
     #idx: indices der Komponente, die gesampled werden sollen, für komponente 0,0: idx =([0],[0])

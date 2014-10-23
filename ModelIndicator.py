@@ -29,7 +29,7 @@ class MatrixFact:
         m["lv"] = stats.norm.rvs(0,lv_prior.var(), size=(num_obs, cand))
         m["w"] = stats.norm.rvs(0,w_prior.var(), size=(cand, dim_obs))
         m["rv"] =  remvar_prior.rvs((1,1))
-        m["llhood"] = 0
+        m["llhood_candidate"] = 0
         m["lprior"] = 0
         
         self.dim_lv = dim_lv
@@ -58,78 +58,53 @@ def sample(theta, data, lv_prior,
     
         
     rval = []
-    pre_llhood = theta["model"][theta["idx"]]["llhood"]
-    count = -10
+    
+    candidates = theta["model"].keys()
+    dir_par = np.array([1] * len(candidates))
+    pre_llhood = theta["model"][candidates[theta["idx"]]]["llhood_candidate"]
     for i in range(num_samples):
-        
         print("## Sample %d; \n" % i, file=sys.stderr)
-        if count < 10:
-            idx_cur = theta["idx"]
-            cur = theta["model"][idx_cur]
-            candidates = theta["model"].keys()
-            #candidates.remove(idx_cur) #- dont remove current 
-            # - thus sometimes the current model is resampled
-            cand_lprob = np.array([1] * len(candidates))
-            cand_lprob -= logsumexp(cand_lprob)
-            idx_prop = candidates[np.argmax(np.random.multinomial(1, exp(cand_lprob)))]
-            idx_nprop = [k for k in candidates if k != idx_prop]
-            prop = theta["model"][idx_prop]
-            prop_orig = deepcopy(prop)
+        idx_cur_dir = theta["idx"]
+        idx_cur = candidates[idx_cur_dir]
+        cur = theta["model"][idx_cur]
+        
+        #candidates.remove(idx_cur) #- dont remove current 
+        # - thus sometimes the current model is resampled
+        cand_prob = np.array([1./len(candidates)] * len(candidates))
+        #cand_lprob -= logsumexp(cand_lprob)
+        idx_prop_dir = np.argmax(np.random.multinomial(1, cand_prob))
+        idx_prop = candidates[idx_prop_dir]
+        idx_nprop_dir = [k for k in range(len(candidates)) if k != idx_prop_dir]
+        prop = theta["model"][idx_prop]
+        
+        print(candidates, idx_cur_dir, idx_prop_dir, idx_nprop_dir, file = sys.stderr)
+        #prop_orig = deepcopy(prop) # for uniform prior, every resampling of a submodel is accepted
+        
+        llhood = llhood_closure(data, cmm_proposal = (theta, idx_prop))
+        rvs = {"w": w_prior, "lv": lv_prior, "rv": remvar_prior}
+        lpri_factors = {}
+        print("pre", int(prop["llhood_candidate"]), theta["llhood_collapsed"], file = sys.stderr)
+        for var in rvs:
+            lpri_tmp = prop["lprior"] - rvs[var].logpdf(prop[var]).sum()
+            class lpri_closure:
+                def logpdf(self, value):
+                    lpri_factors[var] = rvs[var].logpdf(value).sum()
+                    prop["lprior"] = lpri_tmp + lpri_factors[var]
+                    return prop["lprior"]
+            slice_sample_all_components(prop[var], llhood, lpri_closure())
+        print("post", int(prop["llhood_candidate"]), theta["llhood_collapsed"], file = sys.stderr)
             
-            llhood = llhood_closure(data, prop)
-            slice_sample_all_components(prop["w"], llhood, w_prior)
-            slice_sample_all_components(prop["lv"], llhood, lv_prior)
-            slice_sample_all_components(prop["rv"], llhood, remvar_prior)
-            prop["lprior"] = (w_prior.logpdf(prop["w"]).sum() +
-                              lv_prior.logpdf(prop["lv"]).sum() +
-                              remvar_prior.logpdf(prop["rv"]).sum())
-            print(candidates, idx_prop, idx_nprop, file=sys.stderr)
-            other_lpost = logsumexp([theta["model"][k]["lprior"] + theta["model"][k]["llhood"] 
-                                         for k in idx_nprop])
-            numer = logsumexp((other_lpost - prop["llhood"], -log(len(candidates))))
-            denom = logsumexp((other_lpost - prop_orig["llhood"], -log(len(candidates))))
-            
-            if stats.bernoulli.rvs(exp(min((0, numer - denom)))) == 1:
-                print("resampling for %d accepted" % (idx_prop), file=sys.stderr)
-            else:
-                print("resampling for %d NOT accepted" % (idx_prop), file=sys.stderr)
-                prop = theta["model"][idx_prop] = prop_orig
-                
-               
-            orig_dim_move_accept_logprob = min((0, prop["llhood"] - cur["llhood"]))
-            if stats.bernoulli.rvs(exp(orig_dim_move_accept_logprob)) == 1:
-                print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
-                theta["idx"] = idx_prop
-            elif False:
-                print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
-                
-                #propose resampled current dimension
-                orig = deepcopy(cur)
-                
-                llhood = llhood_closure(data, cur)
-                slice_sample_all_components(cur["w"], llhood, w_prior)
-                slice_sample_all_components(cur["lv"], llhood, lv_prior)
-                slice_sample_all_components(cur["rv"], llhood, remvar_prior)
-                
-                resamp_dim_move_accept_logprob = min((0, prop["llhood"]- cur["llhood"]))
-                resamp_logratio = (  logsumexp([1,-resamp_dim_move_accept_logprob])
-                                   - logsumexp([1,-orig_dim_move_accept_logprob]) )
-                                  
-                if stats.bernoulli.rvs(exp(min([0, resamp_logratio]))) == 1:
-                    print("- accepted resample move for %d" % (idx_cur), file=sys.stderr)
-                else:
-                    print("- rejected resample move for %d" % (idx_cur), file=sys.stderr)
-                    theta["model"][idx_cur] = orig
-            if count >= 0:
-                count = count + 1
+        
+        print("proposed llhood:", int(prop["llhood_candidate"]), "current llhood:", int(cur["llhood_candidate"]), file = sys.stderr)
+        orig_dim_move_accept_logprob = min((0, prop["llhood_candidate"] - cur["llhood_candidate"]))
+        if stats.bernoulli.rvs(exp(orig_dim_move_accept_logprob)) == 1:
+            print("move from %d to %d accepted" % (idx_cur, idx_prop), file=sys.stderr)
+            dir_par[idx_prop_dir] += 1
+            theta["idx"] = idx_prop_dir
         else:
-            count = 0
-            cand_lprob = np.array([1] * len(candidates))
-            cand_lprob -= logsumexp(cand_lprob)
-            idx_prop = candidates[np.argmax(np.random.multinomial(1, exp(cand_lprob)))]
-            print("move to %d" % (idx_prop), file=sys.stderr)
-            theta["idx"] = idx_prop
-        print("Model %d\n\n" % theta["idx"], file=sys.stderr)
+            dir_par[idx_cur_dir] += 1
+            print("move from %d to %d rejected" % (idx_cur, idx_prop), file=sys.stderr)
+        print("Model %d\n\n" % candidates[theta["idx"]], file=sys.stderr)
         rval.append(deepcopy(theta))
         
     return rval
@@ -141,15 +116,42 @@ def count_dim(samp):
         c[i] = dimensions.count(i)
     return c
 
-def llhood_closure(data, model_candidate):    
-    def rval():
-        mean = (data - model_candidate["lv"].dot(model_candidate["w"]))
-        ll = np.sum(stats.norm(0, model_candidate["rv"]).logpdf(mean))
+
+
+def llhood_closure(data, model = None, cmm_proposal = (None, None)):
+    if model != None: 
+        assert(cmm_proposal == (None, None))
+        def rval():
+            mean = (data - model["lv"].dot(model["w"]))
+            ll = np.sum(stats.norm(0, model["rv"]).logpdf(mean))
+            
+            model["llhood_candidate"] = ll
+            #print("llhood %f" %model_candidate["llhood_candidate"], file=sys.stderr)
+            return ll
+        return rval
+    elif cmm_proposal != (None, None):
+        (cmm, proposal) = cmm_proposal
+        prop_mdl = cmm["model"][proposal]
         
-        model_candidate["llhood"] = ll
-        #print("llhood %f" %model_candidate["llhood"], file=sys.stderr)
-        return ll
-    return rval
+        candidates = cmm["model"].keys()
+        cd_prior_lprob = -log(len(candidates))
+        lpriors = 0
+        llhoods = []
+        for c in candidates:
+            if c == proposal:
+                continue
+            lpriors = lpriors + cmm["model"][c]["lprior"]
+            llhoods.append(cd_prior_lprob + cmm["model"][c]["llhood_candidate"])
+        llhoods = logsumexp(llhoods)
+        def rval():            
+            mean = (data - prop_mdl["lv"].dot(prop_mdl["w"]))
+            ll = np.sum(stats.norm(0, prop_mdl["rv"]).logpdf(mean))
+            
+            prop_mdl["llhood_candidate"] = ll
+            cmm["llhood_collapsed"] = logsumexp((llhoods, ll + cd_prior_lprob))
+            #print("llhood %f" %model_candidate["llhood_candidate"], file=sys.stderr)
+            return cmm["llhood_collapsed"] # +lpriors
+        return rval
     
     
 def test_all(num_obs = 100, num_samples = 100,
@@ -166,7 +168,7 @@ def test_all(num_obs = 100, num_samples = 100,
     noise_data = data + stats.norm.rvs(0,0.4, size=data.shape)
     
     
-    theta = {"model": {}, "idx": max((1, dim_lv - 1))}    
+    theta = {"model": {}, "idx": 0, "llhood_collapsed":-5e6}    
     
     for cand in range(max((1, dim_lv - 1)), min((dim_obs - 1, dim_lv + 1)) + 1):
         theta["model"][cand] = {}
@@ -174,18 +176,22 @@ def test_all(num_obs = 100, num_samples = 100,
         m["lv"] = stats.norm.rvs(0,lv_prior.var(), size=(num_obs, cand))
         m["w"] = stats.norm.rvs(0,w_prior.var(), size=(cand, dim_obs))
         m["rv"] =  remvar_prior.rvs((1,1))
-        m["llhood"] = 0
+        m["llhood"] = -5e6
+        m["llhood_candidate"] = -5e6
         m["lprior"] = 0
         llhood = llhood_closure(noise_data, m)
         
-        for _ in range(1):        
+        for _ in range(3):        
             slice_sample_all_components(m["w"], llhood, w_prior)
             slice_sample_all_components(m["lv"], llhood, lv_prior)
             slice_sample_all_components(m["rv"], llhood, remvar_prior)
         m["lprior"] = (w_prior.logpdf(m["w"]).sum() +
                        lv_prior.logpdf(m["lv"]).sum() +
                        remvar_prior.logpdf(m["rv"]).sum())
+        m["llhood_candidate"] = m["llhood"]
     samp = sample(theta, data, lv_prior, w_prior, remvar_prior, num_samples)
+    
+    
     
     print(count_dim(samp), file=sys.stderr)
 

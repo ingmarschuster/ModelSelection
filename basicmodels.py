@@ -25,9 +25,18 @@ class MatrixWithComponentPriorModel:
             self.new_prior_func = eval(self.new_prior_func_pickle)
         assert(var_dim_axis < 2)
         self.var_dim_axis = var_dim_axis
+        self.recompute_cache()
     
     def set_global_model(self, glob_mdl):
         self.glob_mdl = glob_mdl
+    
+    def recompute_cache(self):
+        self.lpri_factors = self.prior.logpdf(self.matr)
+        self.last_lpri = self.lpri_factors.sum()
+    
+    def notify(self, idx):
+        self.lpri_factors[idx] = self.prior.logpdf(self.matr[idx])
+        self.last_lpri = self.lpri_factors.sum()
             
     def sample(self, data = None,  row_col_ranges = (None, None)):
         rowrange, colrange = row_col_ranges
@@ -102,6 +111,7 @@ class FixMatrixModel:
         self.orig = matrix
         self.matr = matrix
         self.var_dim_axis = var_dim_axis
+        self.last_lpri = 0
         
     def set_global_model(self, glob_mdl):
         self.glob_mdl = glob_mdl
@@ -115,6 +125,12 @@ class FixMatrixModel:
             axis = self.var_dim_axis
         assert(axis < len(self.matr.shape))
         return np.delete(self.matr, self.matr.shape[axis]-1, axis=axis)
+    
+    def recompute_cache(self):
+        pass
+    
+    def notify(self, idx):
+        print("priors cant be updated for FixMatrixModel", file = sys.stderr)
     
     def sample_new_dim(self, insert_at, axis = None):
         assert(self.var_dim_axis != None or
@@ -144,6 +160,15 @@ class IsotropicRemainingVarModel:
     def __init__(self, dim):
         self.matr = np.eye(dim)
         self.var = MatrixWithComponentPriorModel((1,1), prior = ("gamma", (1.,), {"scale":1.}))
+        self.recompute_cache()
+        
+    def recompute_cache(self):
+        self.lpri_factors = self.prior.logpdf(self.matr)
+        self.last_lpri = self.lpri_factors.sum()
+    
+    def notify(self, idx):
+        self.lpri_factors[idx] = self.prior.logpdf(self.matr[idx])
+        self.last_lpri = self.lpri_factors.sum()
     
     def get(self):
         return self.matr * self.var.matr[0]
@@ -157,7 +182,7 @@ class IsotropicRemainingVarModel:
         
 
 
-class GlobalTwoFactorModel:
+class TwoFactorModel:
     def __init__(self, latent_dim,
                        data,
                        lv_mdl = None,
@@ -218,6 +243,7 @@ class GlobalTwoFactorModel:
 
     def notify(self, data, rv_mdl, idx):
         (row, col) = idx
+        rv_mdl.notify(idx)
         if rv_mdl == self.lvm:
             self.pred[row,:] = (self.lvm.get()[row,:].dot(self.wm.get()) + self.data_mean)
             tmp = np.array([stats.norm(self.pred[row,j], self.rvm.get()[j,j]).logpdf(data[row,j])
@@ -228,7 +254,6 @@ class GlobalTwoFactorModel:
             self.ll_factors[:, col] = np.array([stats.norm(self.pred[i,col],
                                                            self.rvm.get()[col,col]).logpdf(data[i,col])
                                                             for i in range(self.pred[:, col].shape[0])])
-            
         else:
             self.ll_factors = np.array( [[stats.norm(self.pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
                                       for j in range(self.pred.shape[1])]
@@ -265,46 +290,6 @@ class GlobalTwoFactorModel:
                 self.notify(data, rv_mdl, idx)
                 return self.last_ll
             return ll_with_caching
-        
-        if False:
-            if rv_mdl == self.lvm or rv_mdl == self.wm:
-                assert(rv_mdl == self.lvm or rv_mdl == self.wm)
-                (row, col) = idx
-                data_mean = np.average(data,0)
-                pred = self.prediction(data)
-                precomp_ll = 0
-                for i in range(pred.shape[0]):
-                    for j in range(pred.shape[1]):
-                        if ((rv_mdl == self.lvm and i == row) or
-                            (rv_mdl == self.wm and j == col)):
-                            continue
-                        
-                        precomp_ll += stats.norm(pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
-                        
-            
-                if rv_mdl == self.lvm:
-                    def ll_fix_lv_variable():
-                        pred = (self.lvm.get()[row,:].dot(self.wm.get()) + data_mean).flat
-                        self.last_ll = precomp_ll + np.sum([stats.norm(pred[i], self.rvm.get()[i,i]).logpdf(data[row, i])
-                                                            for i in range(len(pred))])
-                                        #multiv_norm_logpdf(, self.lvm.get()[row, :].dot(self.wm.get()) + data_mean,  self.rvm.get())
-                        return self.last_ll
-                    return ll_fix_lv_variable
-                elif rv_mdl == self.wm:
-                    def ll_fix_weight_variable():
-                        pred = (self.kernel(self.lvm.get(), self.wm.get()[:, col]) + data_mean[col]).flat
-                        d = data[:,col].flat
-                        self.last_ll = precomp_ll + np.sum([stats.norm(pred[i], self.rvm.get()[col,col]).logpdf(d[i]) for i in range(len(d))])
-                        return self.last_ll
-                    return ll_fix_weight_variable
-            else:
-                pred = self.prediction(data)
-                def ll_for_remain_var_variable():
-                    self.last_ll = np.sum([stats.  fnorm(pred[i,j], self.rvm.get()[j,j]).logpdf(data[i,j])
-                                           for i in range(pred.shape[0])
-                                           for j in range(pred.shape[1])])
-                    return self.last_ll
-                return ll_for_remain_var_variable
                 
 
 def test_precomputed_ll():
