@@ -5,16 +5,20 @@ Created on Wed Oct 22 11:14:34 2014
 @author: Ingmar Schuster
 """
 
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
 from numpy import exp, log, sqrt
 from scipy.misc import logsumexp
 import numpy as np
 import scipy.stats as stats
+import cPickle as pickle
+
+import time
 
 from slice_sampling import slice_sample_all_components
 
 from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import synthdata
+from plotting import plot_var_bias_mse
 
 
 
@@ -61,7 +65,7 @@ def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
 ## Data generation ##
 
 datasets = synthdata.simple_gaussian(dims = 1,
-                                     observations_range = range(10,21,10),
+                                     observations_range = range(10,101,10),
                                      num_datasets = 10)
 
 ## MODEL Likelihood 
@@ -129,8 +133,12 @@ for obs_size in datasets:
     for estim in ("qis", "is"):
         diff = exp(est[obs_size][estim]) - exp(est[obs_size]["an"])
         bias = np.mean(diff)
-        var = np.var(diff)
         mse = np.mean(np.power(diff, 2))
+        var = np.var(diff)
         
         res[obs_size][estim] = {"bias^2":bias**2, "var": var, "mse":mse}
-print(res)
+
+res_file_name = "res_"+str(time.clock())
+with open("results/" + res_file_name + ".pickle", "wb") as f:
+    pickle.dump({"res":res, "est": est}, f)
+plot_var_bias_mse(res, "results/"+res_file_name+".pdf")

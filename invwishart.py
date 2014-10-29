@@ -1,3 +1,4 @@
+from __future__ import division, print_function
 import numpy as np
 import numpy.random as npr
 from numpy.linalg import inv, cholesky
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     #print invwishartrand(nu,a)
     x = np.array([ invwishartrand(nu,a) for i in range(20000)])
     nux = np.array([invwishartrand_prec(nu,a) for i in range(20000)])
-    print x.shape
-    print np.mean(x,0),"\n", inv(np.mean(nux,0))
+    print(x.shape)
+    print(np.mean(x,0),"\n", inv(np.mean(nux,0)))
     #print inv(a)/(nu-a.shape[0]-1)
     

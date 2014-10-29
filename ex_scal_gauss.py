@@ -16,9 +16,7 @@ from slice_sampling import slice_sample_all_components
 from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 
 
-def sample_params(num_samples,
-                                  D,
-                                  mu_pr, sd_pr, sd_li):
+def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):
     
     rval = []
     prior = stats.norm(mu_pr, sd_pr)
@@ -59,10 +57,11 @@ def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
 
 
 ## Data generation ##
+num_obs = 10
 mu_gen = 10.
 sd_gen = 1.
 
-D = stats.norm(mu_gen, sd_gen).rvs(1000)
+D = stats.norm(mu_gen, sd_gen).rvs(num_obs)
 
 mu_D = D.mean()
 
@@ -85,21 +84,21 @@ pr1 = stats.norm(mu_pr1, sd_pr1)
 ## MODEL 2 prior ##
 
 mu_pr2 = 10.
-sd_pr2 = 3.
+sd_pr2 = 1.
 pr2 = stats.norm(mu_pr2, sd_pr2)
 
 
 
 ## Sample from and fit gaussians to the posteriors ##
-num_post_samples = 1000
+num_post_samples = 100
 
 samp_post1 = sample_params(num_post_samples, D, mu_pr1, sd_pr1, sd_li)
-param_fit1 = stats.norm.fit(samp_post1)
-fit1 = stats.norm(param_fit1[0], param_fit1[1])
+param_fit1 = stats.t.fit(samp_post1)
+fit1 = stats.t(param_fit1[0], param_fit1[1])
 
 samp_post2 = sample_params(num_post_samples, D, mu_pr2, sd_pr2, sd_li)
-param_fit2 = stats.norm.fit(samp_post2)
-fit2 = stats.norm(param_fit2[0], param_fit2[1])
+param_fit2 = stats.t.fit(samp_post2)
+fit2 = stats.t(param_fit2[0], param_fit2[1])
 
 
 print("Fitted posterior params 1", param_fit1)

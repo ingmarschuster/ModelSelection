@@ -1,40 +1,5 @@
-The goal is to sample from the posterior p(theta,k|x) of a distribution of the form p(x|theta,k)p(theta|k)p(k), where p(theta|k) = h(theta_1)...h(theta_k).  Each component theta_i may be multi-dimensional.
-
-Suppose theta currently has k components. Let k' be k with probability 0.5 or k+1 with probability 0.5.  If k' = k, set theta' = theta.  If k' = k+1, randomly pick j uniformly from {1,...,k+1}, sample theta'_j from h, and set theta'_{-j} = theta, where theta'_{-j} denotes the (k+1)-component vector theta' with component j removed.  (So far, this is what we talked about on the phone.)
-
-Now, we sample k,theta given k',theta'. Based on my (preliminary) calculations, it looks like this is the discrete distribution on k'+1 elements proportional to
-
-    p(x|theta',k')p(k') at k=k', theta=theta'
-    p(x|theta'_{-j},k'-1)p(k'-1)/k' at k=k'-1, theta=theta'_{-j}, for j = 1,...,k'.
-
-This move should be interleaved with an update to theta, for fixed k.  
--------------------------------
-
-= move A =
-   - let k' be k with probability 0.5 or k+1 with probability 0.5
-   - choose k, theta to be k', theta' or k'-1, theta'_{-j} according to
-       - p(x|theta',k')p(k') at k=k', theta=theta'
-       - p(x|theta'_{-j},k'-1)p(k'-1)/k' at k=k'-1, theta=theta'_{-j}, for j = 1,...,k'
-= move B =
-   - update theta
-
-And AB (or maybe ABB) represents one sample from the complete model.#
-
-
-## 100 obs, 100 samples
-#update theta twice before resampling dimensionality: too low (1)
-#update theta a) before b) after resampling dimensionality: too low (1)
-#update theta twice after resampling dimensionality: too high (4)
-#update theta a) before b) twice after resampling dimensionality: too low (1)
-
-
------
-
-Difference to code review: don't estimate mean of weight-matrix, rather center data (maybe even Z-Score conversion)
-
-
-========================== The naive (a.k.a. Ingmars) approach to trans-dimensional sampling ==========================
-
-For upper bound K on number of dimensions, keep K different states theta^{(1)}, ..., theta^{(K)}. For each possible number of dimensions, run the Markov Chain for a fixed amount of burn-in samples, then draw a fixed amount of samples from the posterior over theta^{(1)}, ..., the posterior over theta^{(K)} to get an initial estimate of marginal likelihood for a given dimensionality (i.e. integrating out/average over theta^{(1)}, ..., theta^{(K)}).
-
-From this point on, draw posterior samples from the dimensionality mixture model, where the probability of drawing from the fixed dimensionality model of dimensionality j is proportional to the marginal likelihood under model j.
+for Dataset size n = 10, 20, …, 200:
+    for independent prepared dataset (of fixed numer of prepared datasets R=10):
+        estimate evidence with different methods
+        estimate bias^2, variance and MSE for different methods
+        
