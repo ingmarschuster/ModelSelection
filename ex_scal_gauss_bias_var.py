@@ -17,6 +17,7 @@ import time
 from slice_sampling import slice_sample_all_components
 
 from sobol.sobol_seq import i4_sobol, i4_sobol_generate
+import halton
 import synthdata
 from plotting import plot_var_bias_mse
 
@@ -70,7 +71,7 @@ def evidence_from_importance_weights(weights, num_weights_range = None):
 
 datasets = synthdata.simple_gaussian(dims = 1,
                                      observations_range = range(10,11,10),
-                                     num_datasets = 50)
+                                     num_datasets = 5)
 
 ## MODEL Likelihood 
 
@@ -91,8 +92,9 @@ num_post_samples = 1000
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
 num_imp_samples = 1000
 lowdisc_seq = i4_sobol_generate(1, num_imp_samples + 2, 2).flat[:]
+lowdisc_seq_halt = halton.sequence(num_imp_samples, 3).flat[:]
 
-estimator_names = ["qis","is","priorIs"]
+estimator_names = ["qis(sobol)","is","priorIs"] #,"qis(halton)"
 est = {}
 res = {}
 num_evid_samp = np.logspace(1,3,15, base=10).astype(int)
@@ -123,8 +125,13 @@ for obs_size in datasets:
         
         (qis_w, qis_w_norm) = importance_weights(D, sd_li, pr, fit,
                                                  fit.ppf(lowdisc_seq))
-        est[obs_size]["qis"].append(evidence_from_importance_weights(qis_w, num_evid_samp))
-        
+        est[obs_size]["qis(sobol)"].append(evidence_from_importance_weights(qis_w, num_evid_samp))
+
+        if False:
+            (hqis_w, hqis_w_norm) = importance_weights(D, sd_li, pr, fit,
+                                                     fit.ppf(lowdisc_seq_halt))
+            est[obs_size]["qis(halton)"].append(evidence_from_importance_weights(hqis_w, num_evid_samp))
+
         ## draw standard importance samples        
         (is_w, is_w_norm) = importance_weights(D, sd_li, pr, fit,
                                                fit.rvs(num_imp_samples))
@@ -152,4 +159,4 @@ res_file_name = "res_"+str(time.clock())
 print(res_file_name)
 with open("results/" + res_file_name + ".pickle", "wb") as f:
     pickle.dump({"res":res, "#is-samp": num_evid_samp, "est": est}, f)
-plot_var_bias_mse(res, num_evid_samp, "results/"+res_file_name+".pdf")
+plot_var_bias_mse(res, num_evid_samp, outfname = "results/"+res_file_name+".pdf")
