@@ -16,31 +16,33 @@ import matplotlib as mpl
 
 import matplotlib.pyplot as plt
 
-def plot_var_bias_mse(res, outfname = "plot.pdf"):
+def plot_var_bias_mse(res, num_evid_samp, logarithmic = True, outfname = "plot.pdf"):
     ssize = sorted(res.keys())
-    estimators = res[ssize[0]].keys()
-    measures = res[ssize[0]][estimators[0]].keys()
+    measures = res[ssize[0]].keys()
+    estimators = res[ssize[0]][measures[0]].keys()
     fig, axes = plt.subplots(ncols=len(measures),nrows=1)
-    collect = {}
-    
-    for m in measures:
-        collect[m] = {}
-        for e in estimators:
-            collect[m][e] = log([res[s][e][m] for s in ssize])
     
     for i in range(len(measures)):
         m = measures[i]
         a = axes[i]
         for e in estimators:
-            a.plot(ssize, collect[m][e], label=e)
+            if logarithmic:
+                prestr = "log "
+                x = log(num_evid_samp)
+                y = log(res[10][m][e])                
+            else:
+                prestr = ""
+                x = num_evid_samp
+                y = res[10][m][e]
+            a.plot(x, y, label=e)
         a.set_title("$"+m+"$")
-        a.set_xlabel("# observations")
-        a.set_ylabel("log $"+m+"$")
+        a.set_xlabel(prestr + "number of samples")
+        a.set_ylabel(prestr + "$"+m+"$")
         a.autoscale("both")
-        a.set_aspect("equal", adjustable="datalim")
-        a.legend(loc="upper right")
+        a.set_aspect("auto", adjustable="datalim")
+    lgd = axes[-1].legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
     fig.tight_layout()
-    fig.savefig(outfname, bbox_inches='tight')
+    fig.savefig(outfname, bbox_extra_artists=(lgd,), bbox_inches='tight')
             
     
                 

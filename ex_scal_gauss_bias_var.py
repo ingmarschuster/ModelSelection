@@ -59,14 +59,18 @@ def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
          )
     w_norm = w - logsumexp(w)
     return (w, w_norm)
-         
+
+def evidence_from_importance_weights(weights, num_weights_range = None):
+    if num_weights_range is None:
+        logsumexp(weights)-log(len(weights))
+    return [logsumexp(weights[:N]) - log(N) for N in num_weights_range]
 
 
 ## Data generation ##
 
 datasets = synthdata.simple_gaussian(dims = 1,
-                                     observations_range = range(10,101,10),
-                                     num_datasets = 10)
+                                     observations_range = range(10,11,10),
+                                     num_datasets = 5d[0)
 
 ## MODEL Likelihood 
 
@@ -88,13 +92,16 @@ num_post_samples = 1000
 num_imp_samples = 1000
 lowdisc_seq = i4_sobol_generate(1, num_imp_samples + 2, 2).flat[:]
 
-
+estimator_names = ["qis","is","priorIs"]
 est = {}
 res = {}
+num_evid_samp = np.logspace(1,3,15, base=10).astype(int)
 
 
 for obs_size in datasets:
-    est[obs_size] = {"an":[], "qis":[], "is":[]}
+    est[obs_size] = {"an":[]}
+    for estim in estimator_names:
+        est[obs_size][estim] = []
     for ds in datasets[obs_size]:
         D = ds["obs"]
         (mu_D, sd_d) = ds["params"]
@@ -116,29 +123,33 @@ for obs_size in datasets:
         
         (qis_w, qis_w_norm) = importance_weights(D, sd_li, pr, fit,
                                                  fit.ppf(lowdisc_seq))
-        est[obs_size]["qis"].append(logsumexp(qis_w)-log(len(qis_w)))
+        est[obs_size]["qis"].append(evidence_from_importance_weights(qis_w, num_evid_samp))
         
-        ## An finally standard importance samples        
+        ## draw standard importance samples        
         (is_w, is_w_norm) = importance_weights(D, sd_li, pr, fit,
                                                fit.rvs(num_imp_samples))
-        est[obs_size]["is"].append(logsumexp(is_w)-log(len(is_w)))
+        est[obs_size]["is"].append(evidence_from_importance_weights(is_w, num_evid_samp))
+        
+        ## draw importance samples from the prior       
+        (prior_is_w, prior_is_w_norm) = importance_weights(D, sd_li, pr, pr,
+                                               pr.rvs(num_imp_samples))
+        est[obs_size]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_evid_samp))
         
     for key in est[obs_size]:
         est[obs_size][key] = np.array(est[obs_size][key])
         
-    res[obs_size]={}
+    res[obs_size] = {"bias^2":{}, "var": {}, "mse":{}}
     
     # now calculate bias, variance and mse of estimators when compared
     # to analytic evidence
-    for estim in ("qis", "is"):
-        diff = exp(est[obs_size][estim]) - exp(est[obs_size]["an"])
-        bias = np.mean(diff)
-        mse = np.mean(np.power(diff, 2))
-        var = np.var(diff)
-        
-        res[obs_size][estim] = {"bias^2":bias**2, "var": var, "mse":mse}
+    for estim in estimator_names:
+        diff = exp(est[obs_size][estim]) - exp(est[obs_size]["an"]).reshape((len(est[obs_size]["an"]), 1))
+        res[obs_size]["bias^2"][estim] = np.mean(diff, 0)**2
+        res[obs_size]["mse"][estim] =  np.mean(np.power(diff, 2), 0)
+        res[obs_size]["var"][estim] =  np.var(diff, 0)
 
 res_file_name = "res_"+str(time.clock())
+print(res_file_name)
 with open("results/" + res_file_name + ".pickle", "wb") as f:
-    pickle.dump({"res":res, "est": est}, f)
-plot_var_bias_mse(res, "results/"+res_file_name+".pdf")
+    pickle.dump({"res":res, "#is-samp": num_evid_samp, "est": est}, f)
+plot_var_bias_mse(res, num_evid_samp, "results/"+res_file_name+".pdf")
