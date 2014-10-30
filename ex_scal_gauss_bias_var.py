@@ -70,7 +70,7 @@ def evidence_from_importance_weights(weights, num_weights_range = None):
 
 datasets = synthdata.simple_gaussian(dims = 1,
                                      observations_range = range(10,11,10),
-                                     num_datasets = 5d[0)
+                                     num_datasets = 50)
 
 ## MODEL Likelihood 
 
