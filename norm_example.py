@@ -20,11 +20,11 @@ from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import halton
 import synthdata
 from plotting import plot_var_bias_mse
+from evidence import analytic_logevidence_scalar_gaussian, evidence_from_importance_weights
 
 
 
-def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):
-    
+def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):    
     rval = []
     prior = stats.norm(mu_pr, sd_pr)
     theta = prior.rvs((1,))
@@ -33,24 +33,6 @@ def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):
         rval.append(theta.copy())
     return np.array(rval)
 
-def analytic_logevidence(D, mu_pr, sd_pr, sd_li):
-    v_pr = sd_pr**2 #tau^2 in Murphy
-    v_li = sd_li**2 #sigma^2 in Murphy
-    D_mean = np.mean(D)
-    D_mean_sq = D_mean**2
-    
-    fact = [ (log(sd_li) - ( len(D) *log(sqrt(2*np.pi) *sd_li) #1st factor
-                           + log(sqrt(len(D) * v_pr + v_li))   )),
-             (- (  np.power(D, 2).sum() / (2 * v_li)   #2nd factor
-                 + mu_pr**2             / (2 * v_pr))),
-             (( (v_pr*len(D)**2 *D_mean_sq)/v_li   #numerator of 3rd factor
-                 + (v_li * D_mean_sq)/v_pr
-                 + 2 * len(D) * D_mean * mu_pr
-               ) / (2 * (len(D) * v_pr + v_li)) # denominator of 3rd factor
-             )            
-           ]
-    #print(fact)
-    return np.sum(fact)
 
 def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
     w = ((prior.logpdf(imp_samp) # log prior of samples
@@ -60,11 +42,6 @@ def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
          )
     w_norm = w - logsumexp(w)
     return (w, w_norm)
-
-def evidence_from_importance_weights(weights, num_weights_range = None):
-    if num_weights_range is None:
-        logsumexp(weights)-log(len(weights))
-    return [logsumexp(weights[:N]) - log(N) for N in num_weights_range]
 
 
 ## Data generation ##
@@ -105,9 +82,7 @@ for obs_size in datasets:
     for estim in estimator_names:
         est[obs_size][estim] = []
     for ds in datasets[obs_size]:
-        D = ds["obs"]
-        (mu_D, sd_d) = ds["params"]
-        
+        D = ds["obs"]        
         
 
         ## Sample from and fit gaussians to the posteriors ##
@@ -118,7 +93,7 @@ for obs_size in datasets:
         
         ## Analytic evidence
         
-        est[obs_size]["an"].append(analytic_logevidence(D, mu_pr, sd_pr, sd_li))
+        est[obs_size]["an"].append(analytic_logevidence_norm(D, mu_pr, sd_pr, sd_li))
         
         # draw quasi importance samples using the percent point function
         # (PPF, aka quantile function) where cdf^-1 = ppf 

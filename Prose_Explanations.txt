@@ -1,5 +1,6 @@
-for Dataset size n = 10, 20, …, 200:
-    for independent prepared dataset (of fixed numer of prepared datasets R=10):
+for m = 10 independent parameters:
+    for Dataset size n = 10, 20, …, 200:
+    
         estimate evidence with different methods
         estimate bias^2, variance and MSE for different methods
         
