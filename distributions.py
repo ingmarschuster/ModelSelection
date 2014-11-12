@@ -5,6 +5,7 @@ from numpy.linalg import inv, cholesky, det
 from scipy.special import multigammaln
 from scipy.stats import chi2
 import scipy.stats as stats
+from linalg import pdinv
 
 #some functions taken from https://gist.github.com/jfrelinger/2638485
 
@@ -69,6 +70,35 @@ def norm_invwishart_logpdf(mu, K, K0, nu0, mu0, kappa0):
     
     return (-((nu0 + np.max(mu.shape))/2+1) * log(Kdet) +
              (-np.dot(K0.T.flat, Ki.flat) - kappa0 * diff.T.dot(Ki).dot(diff))/2)
+
+
+class mvnorm(object):
+    def __init__(self, mu, K):        
+        assert(np.prod(mu.shape) == K.shape[0] )
+        assert(K.shape[0] == K.shape[1])
+        self.mu = mu
+        self.K = K
+        (self.Ki, self.L, self.Li, self.logdet) = pdinv(K)
+        self.freeze = stats.multivariate_normal(mu, K)
+        
+    def ppf_pointwise(self, component_cum_prob):
+        std_norm = stats.norm(0, 1)
+        rval = []
+        for r in range(component_cum_prob.shape[0]):
+            rval.append(self.mu + self.L.dot(std_norm.ppf(component_cum_prob[r, :])))
+        return np.array(rval)
+    
+    def logpdf(self, x):
+        return self.freeze.logpdf(x)
+    
+    def rvs(self, *args, **kwargs):
+        return self.freeze.rvs(*args, **kwargs)
+    
+    @classmethod
+    def fit(cls, samples): # observations expected in rows
+        mu = samples.mean(0)
+        diff = samples - mu
+        return (mu, diff.T.dot(diff))
 
 
 class norm_invwishart(object):

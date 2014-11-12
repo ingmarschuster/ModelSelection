@@ -22,13 +22,15 @@ import synthdata
 from plotting import plot_var_bias_mse
 from evidence import analytic_logevidence_scalar_gaussian, evidence_from_importance_weights
 
+from estimator_statistics import log_bias_sq
 
 
 def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):    
     rval = []
     prior = stats.norm(mu_pr, sd_pr)
     theta = prior.rvs((1,))
-    for _ in range(num_samples):
+    for i in range(num_samples):
+        print("Posterior sample", i)
         slice_sample_all_components(theta, lambda: stats.norm.logpdf(D, theta, sd_li).sum(), prior)
         rval.append(theta.copy())
     return np.array(rval)
@@ -63,18 +65,18 @@ sd_pr = 10.
 pr = stats.norm(mu_pr, sd_pr)
 
 ## Number of posterior samples to draw ##
-num_post_samples = 1000
+num_post_samples = 500
 
 
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
 num_imp_samples = 1000
-lowdisc_seq = i4_sobol_generate(1, num_imp_samples + 2, 2).flat[:]
+lowdisc_seq_sob = i4_sobol_generate(1, num_imp_samples + 2, 2).flat[:]
 lowdisc_seq_halt = halton.sequence(num_imp_samples, 3).flat[:]
 
 estimator_names = ["qis(sobol)","is","priorIs"] #,"qis(halton)"
 est = {}
 res = {}
-num_evid_samp = np.logspace(1,3,15, base=10).astype(int)
+num_evid_samp = np.logspace(1, np.log10(num_imp_samples), 15, base=10).astype(int)
 
 
 for obs_size in datasets:
@@ -93,13 +95,13 @@ for obs_size in datasets:
         
         ## Analytic evidence
         
-        est[obs_size]["an"].append(analytic_logevidence_norm(D, mu_pr, sd_pr, sd_li))
+        est[obs_size]["an"].append(analytic_logevidence_scalar_gaussian(D, mu_pr, sd_pr, sd_li))
         
         # draw quasi importance samples using the percent point function
         # (PPF, aka quantile function) where cdf^-1 = ppf 
         
         (qis_w, qis_w_norm) = importance_weights(D, sd_li, pr, fit,
-                                                 fit.ppf(lowdisc_seq))
+                                                 fit.ppf(lowdisc_seq_sob))
         est[obs_size]["qis(sobol)"].append(evidence_from_importance_weights(qis_w, num_evid_samp))
 
         if False:
@@ -126,7 +128,7 @@ for obs_size in datasets:
     # to analytic evidence
     for estim in estimator_names:
         diff = exp(est[obs_size][estim]) - exp(est[obs_size]["an"]).reshape((len(est[obs_size]["an"]), 1))
-        res[obs_size]["bias^2"][estim] = np.mean(diff, 0)**2
+        res[obs_size]["bias^2"][estim] = np.mean(diff, 0)**2 #exp(log_bias_sq(est[obs_size]["an"], est[obs_size][estim]))
         res[obs_size]["mse"][estim] =  np.mean(np.power(diff, 2), 0)
         res[obs_size]["var"][estim] =  np.var(diff, 0)
 

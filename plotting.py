@@ -22,6 +22,8 @@ def plot_var_bias_mse(res, num_evid_samp, logarithmic = True, outfname = "plot.p
     estimators = res[ssize[0]][measures[0]].keys()
     fig, axes = plt.subplots(ncols=len(measures),nrows=1)
     
+    some_val = res.values()[0]
+    
     for i in range(len(measures)):
         m = measures[i]
         a = axes[i]
@@ -29,11 +31,11 @@ def plot_var_bias_mse(res, num_evid_samp, logarithmic = True, outfname = "plot.p
             if logarithmic:
                 prestr = "log "
                 x = log(num_evid_samp)
-                y = log(res[10][m][e])                
+                y = log(some_val[m][e])                
             else:
                 prestr = ""
                 x = num_evid_samp
-                y = res[10][m][e]
+                y = some_val[m][e]
             a.plot(x, y, label=e)
         a.set_title("$"+m+"$")
         a.set_xlabel(prestr + "number of samples")
