@@ -25,12 +25,14 @@ from plotting import plot_var_bias_mse
 from evidence import analytic_postparam_logevidence_mvnorm_known_K_li, evidence_from_importance_weights
 from distributions import mvnorm, norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart
 
-from estimator_statistics import log_bias_sq
+import estimator_statistics as eststat
+from linalg import ensure_array
+
 
 
 def sample_params_known_K_li(num_samples, D, prior, K_li):
     rval = []
-    mu = prior.rvs()
+    mu = ensure_array(prior.rvs())
     def llhood():
         return stats.multivariate_normal.logpdf(D, mu, K_li).sum()
     for i in range(num_samples):
@@ -42,8 +44,11 @@ def sample_params_known_K_li(num_samples, D, prior, K_li):
 def sample_params_unknown_K_li(num_samples, D, K_pr, nu_pr, mu_pr, kappa_pr):
     rval_K = []
     rval_mu = []
-    K = invwishart_rv(K_pr, nu_pr)
-    mu = stats.multivariate_normal(mu_pr, K / kappa_pr).rvs()
+    K = ensure_array(invwishart_rv(K_pr, nu_pr))
+    mu = ensure_array(stats.multivariate_normal(mu_pr, K / kappa_pr).rvs())
+    if len(mu.shape) == 0:
+        mu = mu.reshape((1, 1))
+        K = K.reshape((1, 1))
     def llhood():
         return stats.multivariate_normal.logpdf(D, mu, K).sum()
     for i in range(num_samples):        
@@ -68,17 +73,29 @@ def generate_llhood_func_known_K_li(D, K_li):
                            for mean in posterior_samples])
     return rval
 
+## Dimension of Gaussian ##
+dims = 1
+
+## Number of posterior samples to draw ##
+num_post_samples = 1000
+
+
+## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
+num_imp_samples = 1000
+
+num_datasets = 50
+
+
 ## Data generation ##
-dims = 2
-
 datasets = synthdata.simple_gaussian(dims = dims,
-                                     observations_range = range(1000,1001,10),
-                                     num_datasets = 1)
+                                     observations_range = range(10,11,10),
+                                     num_datasets = num_datasets)
 
+#assert()
 ## MODEL Likelihood 
 
 # mu_li ~ N(mu_pr, sd_pr)
-K_li = np.ones((dims,dims)) + np.eye(dims)
+K_li = np.eye(dims) #+ np.ones((dims,dims))
 
 
 ## MODEL  prior ##
@@ -89,12 +106,7 @@ K_pr = np.eye(dims) * 10
 kappa_pr = 5
 pr = stats.multivariate_normal(mu_pr, K_pr)
 
-## Number of posterior samples to draw ##
-num_post_samples = 100
 
-
-## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
-num_imp_samples = 1000
 lowdisc_seq_sob = i4_sobol_generate(dims, num_imp_samples + 2, 2).T
 
 estimator_names = ["qis(sobol)","is","priorIs"] #,"qis(halton)"
@@ -147,15 +159,20 @@ for obs_size in datasets:
     # now calculate bias, variance and mse of estimators when compared
     # to analytic evidence
     for estim in estimator_names:
-        diff = exp(est[obs_size][estim]) - exp(est[obs_size]["an"]).reshape((len(est[obs_size]["an"]), 1))
-        res[obs_size]["bias^2"][estim] = log_bias_sq(est[obs_size]["an"], est[obs_size][estim])
-        res[obs_size]["mse"][estim] =  np.mean(np.power(diff, 2), 0)
-        res[obs_size]["var"][estim] =  np.var(diff, 0)
+        estimate = est[obs_size][estim]
+        analytic = est[obs_size]["an"].reshape((len(est[obs_size]["an"]), 1))
+        
+        res[obs_size]["bias^2"][estim] = eststat.log_bias_sq(analytic, estimate, axis = 0).flat[:]
+        res[obs_size]["mse"][estim] =  eststat.log_mse_exp(analytic, estimate, axis = 0).flat[:]
+        res[obs_size]["var"][estim] =  eststat.logvarexp(estimate, axis = 0).flat[:]
 
-res_file_name = "res_"+str(time.clock())
+
+
+res_file_name = ("MV-Normal_" + str(dims)+"d_"
+                 + str(num_datasets) + "_Datasets_"
+                 + str(num_post_samples)  + "_McmcSamp_"
+                 + str(num_imp_samples) + "_ImpSamp_" + str(time.clock()))
 print(res_file_name)
 with open("results/" + res_file_name + ".pickle", "wb") as f:
     pickle.dump({"res":res, "#is-samp": num_evid_samp, "est": est}, f)
-print(est, res)
-plot_var_bias_mse(res, num_evid_samp, outfname = "results/"+res_file_name+".pdf")
-        
+plot_var_bias_mse(res, log(num_evid_samp), "MV-Normal", num_post_samples, num_imp_samples, dims, outfname = "results/"+res_file_name+".pdf")

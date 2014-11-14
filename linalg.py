@@ -1,3 +1,19 @@
+import numpy as np
+from scipy import linalg, weave
+import types
+import ctypes
+from ctypes import byref, c_char, c_int, c_double # TODO
+# import scipy.lib.lapack
+import scipy
+import warnings
+
+
+def ensure_array(a):
+    a = np.array(a)
+    if len(a.shape) == 0 or np.prod(a.shape) == 1:
+        a = a.reshape((1,1))
+    return a
+    
 ######################
 # This is  GPy linalg
 ######################
@@ -8,14 +24,7 @@
 # Iain Murray, April 2013. iain contactable via iainmurray.net
 # http://homepages.inf.ed.ac.uk/imurray2/code/tdot/tdot.py
 
-import numpy as np
-from scipy import linalg, weave
-import types
-import ctypes
-from ctypes import byref, c_char, c_int, c_double # TODO
-# import scipy.lib.lapack
-import scipy
-import warnings
+
 
 if np.all(np.float64((scipy.__version__).split('.')[:2]) >= np.array([0, 12])):
     import scipy.linalg.lapack as lapack

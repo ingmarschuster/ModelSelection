@@ -22,7 +22,7 @@ import synthdata
 from plotting import plot_var_bias_mse
 from evidence import analytic_logevidence_scalar_gaussian, evidence_from_importance_weights
 
-from estimator_statistics import log_bias_sq
+import estimator_statistics as eststat
 
 
 def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):    
@@ -46,11 +46,22 @@ def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
     return (w, w_norm)
 
 
+
+
+## Number of posterior samples to draw ##
+num_post_samples = 1000
+
+
+## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
+num_imp_samples = 1000
+
+num_datasets = 50
+
 ## Data generation ##
 
 datasets = synthdata.simple_gaussian(dims = 1,
                                      observations_range = range(10,11,10),
-                                     num_datasets = 5)
+                                     num_datasets = num_datasets)
 
 ## MODEL Likelihood 
 
@@ -64,12 +75,6 @@ mu_pr = 0.
 sd_pr = 10.
 pr = stats.norm(mu_pr, sd_pr)
 
-## Number of posterior samples to draw ##
-num_post_samples = 500
-
-
-## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
-num_imp_samples = 1000
 lowdisc_seq_sob = i4_sobol_generate(1, num_imp_samples + 2, 2).flat[:]
 lowdisc_seq_halt = halton.sequence(num_imp_samples, 3).flat[:]
 
@@ -127,13 +132,19 @@ for obs_size in datasets:
     # now calculate bias, variance and mse of estimators when compared
     # to analytic evidence
     for estim in estimator_names:
-        diff = exp(est[obs_size][estim]) - exp(est[obs_size]["an"]).reshape((len(est[obs_size]["an"]), 1))
-        res[obs_size]["bias^2"][estim] = np.mean(diff, 0)**2 #exp(log_bias_sq(est[obs_size]["an"], est[obs_size][estim]))
-        res[obs_size]["mse"][estim] =  np.mean(np.power(diff, 2), 0)
-        res[obs_size]["var"][estim] =  np.var(diff, 0)
+        estimate = est[obs_size][estim]
+        analytic = est[obs_size]["an"].reshape((len(est[obs_size]["an"]), 1))
+        
+        res[obs_size]["bias^2"][estim] = eststat.log_bias_sq(analytic, estimate, axis = 0).flat[:]
+        res[obs_size]["mse"][estim] =  eststat.log_mse_exp(analytic, estimate, axis = 0).flat[:]
+        res[obs_size]["var"][estim] =  eststat.logvarexp(estimate, axis = 0).flat[:]
 
-res_file_name = "res_"+str(time.clock())
+
+res_file_name = ("Scalar_Normal_" 
+                 + str(num_datasets) + "_Datasets_"
+                 + str(num_post_samples)  + "_McmcSamp_"
+                 + str(num_imp_samples) + "_ImpSamp_" + str(time.clock()))
 print(res_file_name)
 with open("results/" + res_file_name + ".pickle", "wb") as f:
     pickle.dump({"res":res, "#is-samp": num_evid_samp, "est": est}, f)
-plot_var_bias_mse(res, num_evid_samp, outfname = "results/"+res_file_name+".pdf")
+plot_var_bias_mse(res, log(num_evid_samp), "Scalar Normal", num_post_samples, num_imp_samples, 1, outfname = "results/"+res_file_name+".pdf")

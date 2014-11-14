@@ -13,6 +13,7 @@ from numpy.linalg import inv
 
 import numpy as np
 import scipy.stats as stats
+from linalg import ensure_array
 
 def centering_matr(n):
     return np.eye(n) - 1./n * np.ones((n,n))
@@ -51,7 +52,7 @@ def analytic_postparam_logevidence_mvnorm_known_K_li(D, mu_pr, K_pr, K_li):
     Ki_pr = inv(K_pr)
     Ki_li = inv(K_li)
     num_obs = D.shape[0]
-    mu_empirical = D.mean(0)
+    mu_empirical = ensure_array(D.mean(0))
     mu_empirical.shape = (np.prod(mu_empirical.shape),)
     mu_pr.shape = (np.prod(mu_pr.shape),)
     
