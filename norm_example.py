@@ -20,7 +20,7 @@ from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import halton
 import synthdata
 from plotting import plot_var_bias_mse
-from evidence import analytic_logevidence_scalar_gaussian, evidence_from_importance_weights
+from evidence import importance_weights, analytic_logevidence_scalar_gaussian, evidence_from_importance_weights
 
 import estimator_statistics as eststat
 
@@ -35,7 +35,7 @@ def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):
         rval.append(theta.copy())
     return np.array(rval)
 
-
+"""
 def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
     w = ((prior.logpdf(imp_samp) # log prior of samples
            + np.array([stats.norm.logpdf(D, mean, sd_li).sum()
@@ -43,19 +43,19 @@ def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
             - proposal_dist.logpdf(imp_samp) # log pdf of proposal distribution
          )
     w_norm = w - logsumexp(w)
-    return (w, w_norm)
+    return (w, w_norm)"""
 
 
 
 
 ## Number of posterior samples to draw ##
-num_post_samples = 1000
+num_post_samples = 500
 
 
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
 num_imp_samples = 1000
 
-num_datasets = 50
+num_datasets = 5
 
 ## Data generation ##
 
@@ -104,23 +104,26 @@ for obs_size in datasets:
         
         # draw quasi importance samples using the percent point function
         # (PPF, aka quantile function) where cdf^-1 = ppf 
+        def llhood_func(imp_samp): 
+            return np.array([stats.norm.logpdf(D, mean, sd_li).sum()
+                           for mean in imp_samp])
         
-        (qis_w, qis_w_norm) = importance_weights(D, sd_li, pr, fit,
+        (qis_w, qis_w_norm) = importance_weights(D, llhood_func, pr, fit,
                                                  fit.ppf(lowdisc_seq_sob))
         est[obs_size]["qis(sobol)"].append(evidence_from_importance_weights(qis_w, num_evid_samp))
 
         if False:
-            (hqis_w, hqis_w_norm) = importance_weights(D, sd_li, pr, fit,
+            (hqis_w, hqis_w_norm) = importance_weights(D, llhood_func, pr, fit,
                                                      fit.ppf(lowdisc_seq_halt))
             est[obs_size]["qis(halton)"].append(evidence_from_importance_weights(hqis_w, num_evid_samp))
 
         ## draw standard importance samples        
-        (is_w, is_w_norm) = importance_weights(D, sd_li, pr, fit,
+        (is_w, is_w_norm) = importance_weights(D, llhood_func, pr, fit,
                                                fit.rvs(num_imp_samples))
         est[obs_size]["is"].append(evidence_from_importance_weights(is_w, num_evid_samp))
         
         ## draw importance samples from the prior       
-        (prior_is_w, prior_is_w_norm) = importance_weights(D, sd_li, pr, pr,
+        (prior_is_w, prior_is_w_norm) = importance_weights(D, llhood_func, pr, pr,
                                                pr.rvs(num_imp_samples))
         est[obs_size]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_evid_samp))
         

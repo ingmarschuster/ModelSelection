@@ -8,7 +8,7 @@ import scipy
 import warnings
 
 
-def ensure_array(a):
+def ensure_2d(a):
     a = np.array(a)
     if len(a.shape) == 0 or np.prod(a.shape) == 1:
         a = a.reshape((1,1))

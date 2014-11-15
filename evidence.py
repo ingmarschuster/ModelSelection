@@ -13,7 +13,7 @@ from numpy.linalg import inv
 
 import numpy as np
 import scipy.stats as stats
-from linalg import ensure_array
+from linalg import ensure_2d
 
 def centering_matr(n):
     return np.eye(n) - 1./n * np.ones((n,n))
@@ -52,7 +52,7 @@ def analytic_postparam_logevidence_mvnorm_known_K_li(D, mu_pr, K_pr, K_li):
     Ki_pr = inv(K_pr)
     Ki_li = inv(K_li)
     num_obs = D.shape[0]
-    mu_empirical = ensure_array(D.mean(0))
+    mu_empirical = ensure_2d(D.mean(0))
     mu_empirical.shape = (np.prod(mu_empirical.shape),)
     mu_pr.shape = (np.prod(mu_pr.shape),)
     
@@ -90,6 +90,14 @@ def analytic_logevidence_scalar_gaussian(D, mu_pr, sd_pr, sd_li):
            ]
     #print(fact)
     return np.sum(fact)
+
+def importance_weights(D, llhood_func, prior, proposal_dist, imp_samp):
+    w = (prior.logpdf(imp_samp) # log prior of samples
+         + llhood_func(imp_samp) # log likelihood of samples
+         - proposal_dist.logpdf(imp_samp) # log pdf of proposal distribution
+         )
+    w_norm = w - logsumexp(w)
+    return (w, w_norm)
 
 def evidence_from_importance_weights(weights, num_weights_range = None):
     if num_weights_range is None:

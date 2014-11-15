@@ -12,6 +12,7 @@ from scipy.misc import logsumexp
 
 import numpy as np
 import scipy.stats as stats
+
 import cPickle as pickle
 
 import time
@@ -22,19 +23,21 @@ from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import halton
 import synthdata
 from plotting import plot_var_bias_mse
-from evidence import analytic_postparam_logevidence_mvnorm_known_K_li, evidence_from_importance_weights
-from distributions import mvnorm, norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart
+from evidence import importance_weights, analytic_postparam_logevidence_mvnorm_known_K_li, evidence_from_importance_weights
+from distributions import norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart
+from distributions import mvnorm
+#from scipy.stats import norm as mvnorm
 
 import estimator_statistics as eststat
-from linalg import ensure_array
+from linalg import ensure_2d
 
 
 
 def sample_params_known_K_li(num_samples, D, prior, K_li):
     rval = []
-    mu = ensure_array(prior.rvs())
+    mu = ensure_2d(prior.rvs())
     def llhood():
-        return stats.multivariate_normal.logpdf(D, mu, K_li).sum()
+        return mvnorm(mu, K_li).logpdf(D).sum()
     for i in range(num_samples):
         print("Posterior sample", i)
         slice_sample_all_components(mu, llhood, prior)        
@@ -44,51 +47,40 @@ def sample_params_known_K_li(num_samples, D, prior, K_li):
 def sample_params_unknown_K_li(num_samples, D, K_pr, nu_pr, mu_pr, kappa_pr):
     rval_K = []
     rval_mu = []
-    K = ensure_array(invwishart_rv(K_pr, nu_pr))
-    mu = ensure_array(stats.multivariate_normal(mu_pr, K / kappa_pr).rvs())
+    K = ensure_2d(invwishart_rv(K_pr, nu_pr))
+    mu = ensure_2d(mvnorm(mu_pr, K / kappa_pr).rvs())
     if len(mu.shape) == 0:
         mu = mu.reshape((1, 1))
         K = K.reshape((1, 1))
     def llhood():
-        return stats.multivariate_normal.logpdf(D, mu, K).sum()
+        return mvnorm.logpdf(D).sum()
     for i in range(num_samples):        
         slice_sample_all_components(K, llhood, invwishart(K_pr, nu_pr))
-        slice_sample_all_components(mu, llhood, stats.multivariate_normal(mu_pr, K / kappa_pr))
+        slice_sample_all_components(mu, llhood, mvnorm(mu_pr, K / kappa_pr))
         print("Posterior sample", i)
         rval_K.append(K.copy())
         rval_mu.append(mu.copy())
     return (rval_mu, rval_K)
 
-def importance_weights(D, llhood_func, prior, proposal_dist, imp_samp):
-    w = (prior.logpdf(imp_samp) # log prior of samples
-         + llhood_func(imp_samp) # log likelihood of samples
-         - proposal_dist.logpdf(imp_samp) # log pdf of proposal distribution
-         )
-    w_norm = w - logsumexp(w)
-    return (w, w_norm)
 
-def generate_llhood_func_known_K_li(D, K_li):
-    def rval(posterior_samples):
-        return np.array([stats.multivariate_normal.logpdf(D, mean, K_li).sum()
-                           for mean in posterior_samples])
-    return rval
 
 ## Dimension of Gaussian ##
-dims = 1
+dims = 4
+num_obs = 100
 
 ## Number of posterior samples to draw ##
 num_post_samples = 1000
 
 
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
-num_imp_samples = 1000
+num_imp_samples = 10000
 
 num_datasets = 50
 
 
 ## Data generation ##
 datasets = synthdata.simple_gaussian(dims = dims,
-                                     observations_range = range(10,11,10),
+                                     observations_range = range(num_obs, num_obs + 1,10),
                                      num_datasets = num_datasets)
 
 #assert()
@@ -102,12 +94,12 @@ K_li = np.eye(dims) #+ np.ones((dims,dims))
 
 mu_pr = np.zeros(dims)
 nu_pr = 5
-K_pr = np.eye(dims) * 10
+K_pr = np.eye(dims) * 100
 kappa_pr = 5
-pr = stats.multivariate_normal(mu_pr, K_pr)
+pr = mvnorm(mu_pr, K_pr)
 
 
-lowdisc_seq_sob = i4_sobol_generate(dims, num_imp_samples + 2, 2).T
+lowdisc_seq_sob = i4_sobol_generate(dims, num_imp_samples , 2).T
 
 estimator_names = ["qis(sobol)","is","priorIs"] #,"qis(halton)"
 est = {}
@@ -123,32 +115,39 @@ for obs_size in datasets:
         
         ## Sample from and fit gaussians to the posteriors ##
         samp = sample_params_known_K_li(num_post_samples, D,
-                                           stats.multivariate_normal(mu_pr, K_pr),
-                                           K_li)
+                                           mvnorm(mu_pr, K_pr),
+                                           K_li).reshape((num_post_samples, dims))
+                        
         param_fit = mvnorm.fit(samp)
+        #print(ds["params"], param_fit)
         fit = mvnorm(param_fit[0], param_fit[1])
         
         ## Analytic evidence
         ((mu_post, K_post, Ki_post),
          evid) = analytic_postparam_logevidence_mvnorm_known_K_li(D, mu_pr, K_pr, K_li)
+        #print("Analytic",mu_post, K_post, "\nFit", param_fit,"\n")
         est[obs_size]["an"].append(evid)
+        
+        
         
         # draw quasi importance samples using the pointwise percent point function
         # (PPF, aka quantile function) where cdf^-1 = ppf
-        llhood_func = generate_llhood_func_known_K_li(D, K_li)
+        def llhood_func(posterior_samples):
+            return np.array([mvnorm(mean, K_li).logpdf(D).sum()
+                           for mean in posterior_samples])
         
         (qis_sob_w, qis_sob_w_norm) = importance_weights(D, llhood_func, pr, fit,
-                                                         fit.ppf_pointwise(lowdisc_seq_sob))
+                                                         fit.ppf(lowdisc_seq_sob).reshape((num_imp_samples, dims)))
         est[obs_size]["qis(sobol)"].append(evidence_from_importance_weights(qis_sob_w, num_evid_samp))
         ## draw standard importance samples
         (is_w, is_w_norm) = importance_weights(D, llhood_func, pr, fit,
-                                               fit.rvs(num_imp_samples))
+                                               fit.rvs(num_imp_samples).reshape((num_imp_samples, dims)))
         est[obs_size]["is"].append(evidence_from_importance_weights(is_w, num_evid_samp))
         
         
         ## draw importance samples from the prior
         (prior_is_w, prior_is_w_norm) = importance_weights(D, llhood_func, pr, pr,
-                                               pr.rvs(num_imp_samples))
+                                               pr.rvs(num_imp_samples).reshape((num_imp_samples, dims)))
         est[obs_size]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_evid_samp))
 
     for key in est[obs_size]:
@@ -169,6 +168,7 @@ for obs_size in datasets:
 
 
 res_file_name = ("MV-Normal_" + str(dims)+"d_"
+                 + str(num_obs) + "_Observations_"
                  + str(num_datasets) + "_Datasets_"
                  + str(num_post_samples)  + "_McmcSamp_"
                  + str(num_imp_samples) + "_ImpSamp_" + str(time.clock()))

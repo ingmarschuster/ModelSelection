@@ -5,7 +5,7 @@ from numpy.linalg import inv, cholesky, det
 from scipy.special import multigammaln
 from scipy.stats import chi2
 import scipy.stats as stats
-from linalg import pdinv
+from linalg import pdinv, ensure_2d
 
 #some functions taken from https://gist.github.com/jfrelinger/2638485
 
@@ -81,7 +81,8 @@ class mvnorm(object):
         (self.Ki, self.L, self.Li, self.logdet) = pdinv(K)
         self.freeze = stats.multivariate_normal(mu, K)
         
-    def ppf_pointwise(self, component_cum_prob):
+    def ppf(self, component_cum_prob):
+        #this is a pointwise ppf
         std_norm = stats.norm(0, 1)
         rval = []
         for r in range(component_cum_prob.shape[0]):
@@ -97,8 +98,7 @@ class mvnorm(object):
     @classmethod
     def fit(cls, samples): # observations expected in rows
         mu = samples.mean(0)
-        diff = samples - mu
-        return (mu, diff.T.dot(diff))
+        return (mu, ensure_2d(np.cov(samples, rowvar = 0)))
 
 
 class norm_invwishart(object):

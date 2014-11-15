@@ -47,6 +47,7 @@ def plot_var_bias_mse(res, num_evid_samp, title, num_post_samples, num_imp_sampl
     
     fig.tight_layout()
     fig.savefig(outfname, bbox_extra_artists=(lgd,), bbox_inches='tight')
+    plt.close(fig)
             
     
                 
