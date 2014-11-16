@@ -74,20 +74,13 @@ def logsubtrexp(minuend, subtrahend, sign_minuend = None, sign_subtrahend = None
         #print(sign_m*exp(m),  sign_s*exp(s),  sign_m*exp(m) - sign_s*exp(s), sign_res.flat[i] * exp(abs_res.flat[i]))
     
     return (abs_res, sign_res)
+    
+def logaddexp(minuend, subtrahend, sign_minuend = None, sign_subtrahend = None):
+    if sign_subtrahend is None:
+        sign_subtrahend = np.ones(subtrahend.shape)
+    return logsubtrexp(minuend, subtrahend, sign_minuend = sign_minuend, sign_subtrahend = -sign_subtrahend)
 
-def test_logsubtrexp():    
-    for (m, s) in [(np.array([[-10.,   3.],[ -1.,   5.]]), np.array([-5.5,  4. ])),
-                   (np.array([[10.,   -3.],[ 1.,   -5.]]), np.array([5.5,  -4. ])),
-                   (3, 10),
-                   (np.arange(3).astype(float), 1),
-                   ((np.arange(12).reshape((2,2,3)) - 4).astype(float),1)]:
-        (lm, sm) = log_sign(m)
-        (ls, ss) = log_sign(s)
-        (abs_, sign_) = logsubtrexp(lm, ls, sm, ss)
-        assert((np.abs((m - s) - exp_sign(abs_, sign_)) < 1e-14).all())
 
-def logabssubtrexp(minuend, subtrahend, sign_minuend = None, sign_subtrahend = None):
-    return logsubtrexp(minuend, subtrahend, sign_minuend, sign_subtrahend)[0]
 
 def logmeanexp(a, sign_indicator = None, axis = None): 
     def conditional_logsumexp(where, axis):
@@ -117,26 +110,15 @@ def logmeanexp(a, sign_indicator = None, axis = None):
         np.place(res, np.isnan(res), -np.inf)
         res = res - norm
     try:
-        sh = list(a.shape)
-        sh[axis] = 1
-        res = res.reshape(sh)
-        signs = signs.reshape(sh)
+        if axis != None:
+            sh = list(a.shape)
+            sh[axis] = 1
+            res = res.reshape(sh)
+            signs = signs.reshape(sh)
     except Exception as e:
         print("Exception when trying to reshape:", e)
     return (res, signs)
 
-def test_logmeanexp():
-    raise NotImplementedError("check for correct shape!")
-    b = np.array([[-10.22911746,   3.68323883],[ -0.41504275,   5.68779   ]])
-
-    for a in (np.array([[ 6.5,  1. ],[ 2.5,  3. ]]),
-              np.array([(-10, 3), (-1, 5)]),
-              np.arange(4).reshape(2, 2) - 2,
-              stats.norm.rvs(0,10, (2,2))):
-        (la, sa) = log_sign(a)
-        for ax in range(2):
-            (abs_, sign_) = logmeanexp(la, sa, ax)
-            assert((np.abs(a.mean(ax) - exp_sign(abs_, sign_)) < 1e-10).all())
 
 def logvarexp(a, sign_indicator = None, axis = None):
     # the unbiased estimatior (dividing by (n-1))
@@ -150,40 +132,20 @@ def logvarexp(a, sign_indicator = None, axis = None):
     (mean, mean_s) = logmeanexp(a, sign_indicator = sign_indicator, axis = axis)
     (diff, diff_s) = logsubtrexp(a, mean, sign_minuend = sign_indicator, sign_subtrahend = mean_s)
     var = logsumexp(2*diff, axis = axis) - log(diff.shape[axis])
-    #ea = exp_sign(a, sign_indicator)
-    #emean = exp_sign(mean, mean_s)
-    #ediff = exp_sign(diff, diff_s)
-    #evar = exp(var)
-    #print("=====\n", ea, "\nmean", emean, ea.mean(axis) , "\n diff", ediff, ea -emean, "\nvar",np.var(ea, axis = axis), evar)
-    #assert(np.all(np.abs(np.var(ea, axis) - evar) < 1e-10))
+    var = var.reshape(mean.shape)
     return var
-
-def test_logvarexp():
-    b = np.array([[-10.22911746,   3.68323883],[ -0.41504275,   5.68779   ]])
-
-    for a in (np.array([(-10, 3), (-1, 5)]),
-              np.arange(4).reshape(2, 2) - 2,
-              stats.norm.rvs(0,10, (2,2))):
-        (la, sa) = log_sign(a)
-        for ax in range(2):
-            var_ = logvarexp(la, sa, ax)
-            assert((np.abs(np.var(a, ax) - exp(var_)) < 1e-10).all())
     
-def log_mse_exp(log_true_theta, log_estimates, axis = 0):
-    (diff, sign) = logsubtrexp(log_estimates, log_true_theta)
+def logmseexp(log_truth, log_estim, signs_truth = None, signs_estim = None, axis = 0):
+    (diff, sign) = logsubtrexp(log_estim, log_truth, sign_minuend = signs_estim, sign_subtrahend = signs_truth)
     return logmeanexp(diff * 2, axis = axis)[0]
 
-def log_bias(log_true_theta, log_estimates, axis = 0):
-    assert(log_estimates.shape[axis] == log_true_theta.shape[axis] and
-       log_estimates.shape[axis] == np.prod(log_true_theta.shape))
+
+def logbiasexp(log_truth, log_estim, signs_truth = None, signs_estim = None, axis = 0):
+    #assert(log_estim.shape[axis] == log_truth.T.shape[axis])
         
     #(true_tiled, log_estimates) = np.broadcast_arrays(log_true_theta, log_estimates)
-    (diff, sign) = logsubtrexp(log_estimates, log_true_theta)
+    (diff, sign) = logsubtrexp(log_estim, log_truth, sign_minuend = signs_estim, sign_subtrahend = signs_truth)
     return logmeanexp(diff, sign, axis = axis)
 
-def log_bias_sq(log_true_theta, log_estimates, axis = 0):
-    return 2*log_bias(log_true_theta, log_estimates, axis = axis)[0]
-    
-    
-    
-    
+def logbias2exp(log_true_theta, log_estimates, signs_truth = None, signs_estim = None, axis = 0):
+    return 2*logbiasexp(log_true_theta, log_estimates, signs_estim = signs_estim, signs_truth = signs_truth, axis = axis)[0]

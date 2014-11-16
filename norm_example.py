@@ -138,8 +138,8 @@ for obs_size in datasets:
         estimate = est[obs_size][estim]
         analytic = est[obs_size]["an"].reshape((len(est[obs_size]["an"]), 1))
         
-        res[obs_size]["bias^2"][estim] = eststat.log_bias_sq(analytic, estimate, axis = 0).flat[:]
-        res[obs_size]["mse"][estim] =  eststat.log_mse_exp(analytic, estimate, axis = 0).flat[:]
+        res[obs_size]["bias^2"][estim] = eststat.logbias2exp(analytic, estimate, axis = 0).flat[:]
+        res[obs_size]["mse"][estim] =  eststat.logmseexp(analytic, estimate, axis = 0).flat[:]
         res[obs_size]["var"][estim] =  eststat.logvarexp(estimate, axis = 0).flat[:]
 
 

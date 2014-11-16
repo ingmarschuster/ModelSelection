@@ -14,12 +14,12 @@ from invwishart import invwishart_rv
 
 def simple_gaussian(dims = 1, observations_range = range(10,101,10), num_datasets = 10, cov_var_const = 4):
     ds = {}
-    for obs in observations_range:
-        ds[obs] = []
+    for nobs in observations_range:
+        ds[nobs] = []
         for n in range(num_datasets):
             m = stats.multivariate_normal.rvs([0] * dims, np.eye(dims)*15)
             K = invwishart_rv(np.eye(dims) * cov_var_const, dims + 2)
-            ds[obs].append({"params":(m, K),
-                            "obs":stats.multivariate_normal.rvs(m, K, size=obs)})
+            ds[nobs].append({"params":(m, K),
+                            "obs":stats.multivariate_normal.rvs(m, K, size=nobs).reshape((nobs, dims))})
     return ds
             

@@ -65,7 +65,7 @@ def sample_params_unknown_K_li(num_samples, D, K_pr, nu_pr, mu_pr, kappa_pr):
 
 
 ## Dimension of Gaussian ##
-dims = 4
+dims = 2
 num_obs = 100
 
 ## Number of posterior samples to draw ##
@@ -76,6 +76,13 @@ num_post_samples = 1000
 num_imp_samples = 10000
 
 num_datasets = 50
+
+if False:
+    dims = 1
+    num_obs=10
+    num_post_samples = 100
+    num_imp_samples=1000
+    num_datasets=2
 
 
 ## Data generation ##
@@ -153,17 +160,35 @@ for obs_size in datasets:
     for key in est[obs_size]:
         est[obs_size][key] = np.array(est[obs_size][key])
         
-    res[obs_size] = {"bias^2":{}, "var": {}, "mse":{}}
+    res[obs_size] = {"bias^2":{}, "var": {}, "mse":{}, "bias^2{ }(relat)":{}, "var{ }(relat)": {}, "mse{ }(relat)":{}}
     
     # now calculate bias, variance and mse of estimators when compared
     # to analytic evidence
     for estim in estimator_names:
         estimate = est[obs_size][estim]
         analytic = est[obs_size]["an"].reshape((len(est[obs_size]["an"]), 1))
+        est_rel = estimate - analytic
         
-        res[obs_size]["bias^2"][estim] = eststat.log_bias_sq(analytic, estimate, axis = 0).flat[:]
-        res[obs_size]["mse"][estim] =  eststat.log_mse_exp(analytic, estimate, axis = 0).flat[:]
-        res[obs_size]["var"][estim] =  eststat.logvarexp(estimate, axis = 0).flat[:]
+        bias2 = eststat.logbias2exp(analytic, estimate, axis = 0)
+        bias2_rel = eststat.logbias2exp(ensure_2d(0), est_rel, axis = 0)
+        var = eststat.logvarexp(estimate, axis = 0)
+        var_rel = eststat.logvarexp(est_rel, axis = 0)
+        mse = eststat.logmseexp(analytic, estimate, axis = 0)
+        mse_rel = eststat.logmseexp(ensure_2d(0), est_rel, axis = 0)
+        
+        res[obs_size]["bias^2"][estim] = bias2.flat[:]
+        res[obs_size]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
+        res[obs_size]["var"][estim] =  var.flat[:]
+        res[obs_size]["var{ }(relat)"][estim] =  var_rel.flat[:]
+        res[obs_size]["mse"][estim] =  mse.flat[:]
+        res[obs_size]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
+        #print(eststat.logsubtrexp(eststat.logaddexp(bias2, var)[0], mse)[0],"\n",
+        #      eststat.logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])
+        decomp_err = eststat.logmeanexp(eststat.logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])[0]
+      
+        if decomp_err >= -23: # error in original space >= 1e-10 
+            print("large mse decomp error, on average", decomp_err)
+        
 
 
 
