@@ -1,3 +1,6 @@
 [submodule "sobol"]
 	path = sobol
 	url = git@github.com:naught101/sobol_seq.git
+[submodule "distributions"]
+	path = distributions
+	url = git@github.com:ingmarschuster/distributions.git

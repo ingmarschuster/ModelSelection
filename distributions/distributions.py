@@ -1,12 +1,11 @@
 from __future__ import division, print_function, absolute_import
 import numpy as np
 import numpy.random as npr
-from numpy import exp, log
 from numpy.linalg import inv, cholesky, det
 from scipy.special import multigammaln
 from scipy.stats import chi2
 import scipy.stats as stats
-from linalg import pdinv, ensure_2d
+from linalg import pdinv
 
 #some functions taken from https://gist.github.com/jfrelinger/2638485
 
@@ -93,6 +92,9 @@ class mvnorm(object):
     def logpdf(self, x):
         return self.freeze.logpdf(x)
     
+    def logpdf_grad(self, x):
+        return self.Ki.dot(np.atleast_1d(x) - self.mu)
+    
     def rvs(self, *args, **kwargs):
         return self.freeze.rvs(*args, **kwargs)
     
@@ -146,3 +148,27 @@ class invwishart(object):
     def logpdf(self, x):
         return invwishart_logpdf(x, self.K0, self.nu0)
         
+#################################
+        
+def test_invwishart_logpdf():
+    # values from R-package bayesm, function lndIWishart(6.1, a, a)
+    a = 4 * np.eye(5)
+    assert(abs(invwishart_logpdf(a,a,6.1) + 40.526062) < 1*10**-5)
+    
+    a = np.eye(5) + np.ones((5,5))
+    assert(abs(invwishart_logpdf(a,a,6.1) + 25.1069258) < 1*10**-6)
+    
+    a = 2 * np.eye(5)
+    assert(abs(invwishart_logpdf(a,a,6.1) + 30.12885519) < 1*10**-7)
+
+    
+if __name__ == '__main__':
+    npr.seed(1)
+    nu = 5
+    a = np.array([[1,0.5,0],[0.5,1,0],[0,0,1]])
+    #print invwishart_rv(nu,a)
+    x = np.array([ invwishart_rv(nu,a) for i in range(20000)])
+    nux = np.array([invwishart_prec_rv(nu,a) for i in range(20000)])
+    print(x.shape)
+    print(np.mean(x,0),"\n", inv(np.mean(nux,0)))
+    #print inv(a)/(nu-a.shape[0]-1)

@@ -149,3 +149,45 @@ def logbiasexp(log_truth, log_estim, signs_truth = None, signs_estim = None, axi
 
 def logbias2exp(log_true_theta, log_estimates, signs_truth = None, signs_estim = None, axis = 0):
     return 2*logbiasexp(log_true_theta, log_estimates, signs_estim = signs_estim, signs_truth = signs_truth, axis = axis)[0]
+
+
+def logstatistics(est):
+    res = {}
+    for obs_size in est:  
+        res[obs_size] = {"bias^2":{},
+                         "var": {},
+                         "mse":{},
+                         "bias^2{ }(relat)":{}, 
+                         "var{ }(relat)": {}, 
+                         "mse{ }(relat)":{}
+                         }
+        # now calculate bias, variance and mse of estimators when compared
+        # to analytic evidence
+        for estim in est[obs_size]:
+            if estim == "GroundTruth":
+                #Analytical evidence is not to be evaluated
+                continue
+            estimate = est[obs_size][estim]
+            analytic = est[obs_size]["GroundTruth"].reshape((len(est[obs_size]["GroundTruth"]), 1))
+            est_rel = estimate - analytic
+            
+            bias2 = logbias2exp(analytic, estimate, axis = 0)
+            bias2_rel = logbias2exp(np.atleast_2d(0), est_rel, axis = 0)
+            var = logvarexp(estimate, axis = 0)
+            var_rel = logvarexp(est_rel, axis = 0)
+            mse = logmseexp(analytic, estimate, axis = 0)
+            mse_rel = logmseexp(np.atleast_2d(0), est_rel, axis = 0)
+            
+            res[obs_size]["bias^2"][estim] = bias2.flat[:]
+            res[obs_size]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
+            res[obs_size]["var"][estim] =  var.flat[:]
+            res[obs_size]["var{ }(relat)"][estim] =  var_rel.flat[:]
+            res[obs_size]["mse"][estim] =  mse.flat[:]
+            res[obs_size]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
+            #print(logsubtrexp(logaddexp(bias2, var)[0], mse)[0],"\n",
+            #      logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])
+            decomp_err = logmeanexp(logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])[0]
+          
+            if decomp_err >= -23: # error in original space >= 1e-10 
+                print("large mse decomp error, on average", decomp_err)
+    return res
