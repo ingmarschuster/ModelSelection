@@ -23,6 +23,34 @@ from distributions.linalg import pdinv
 from synthdata import simple_gaussian
 import slice_sampling 
 
+def gs(X, row_vecs=True, norm = True):
+    if not row_vecs:
+        X = X.T
+    Y = X[0:1,:].copy()
+    for i in range(1, X.shape[0]):
+        proj = np.diag((X[i,:].dot(Y.T)/np.linalg.norm(Y,axis=1)**2).flat).dot(Y)
+        Y = np.vstack((Y, X[i,:] - proj.sum(0)))
+    if norm:
+        Y = np.diag(1/np.linalg.norm(Y,axis=1)).dot(Y)
+    if row_vecs:
+        return Y
+    else:
+        return Y.T
+
+#np.sum(gs_g(test) - gs(test))
+
+def ideal_covar(direction, main_var_scale = 1, other_var = 0.5, fix_main_var=None):
+    direction = direction.flat[:]
+    if fix_main_var is not None:
+        var = fix_main_var
+    else:
+        var = np.linalg.norm(direction)*main_var_scale
+    vs = np.vstack([direction.flat[:], np.eye(len(direction))[:-1,:]])
+    bas = gs(vs)
+    ew = np.eye(len(direction))*other_var
+    ew[0,0] = var
+    return bas.T.dot(ew).dot(np.linalg.inv(bas.T))
+
 def plot_current_prop(current, proposal_mu, proposal_dist, fig_name="Gradient_PMC.pdf"):
     import matplotlib.pyplot as plt
     import matplotlib.mlab as mlab
@@ -51,44 +79,60 @@ def best_step_size(theta, gradient, llhood_func):
     return step_sizes[best]
    
 
-def construct_covar_in_direction(direction, scale=False, mean="minfill", shrink_fact = 1):
-    dim = np.prod(direction.shape)
-    cov = np.abs(direction) 
-    fill = cov.min() #*0.9
-    cov = np.ones(cov.shape) * fill - np.eye(cov.shape[0]) * fill + np.diag(np.abs(direction))
-    for i in range(dim):
-        for j in range(i,dim):
-            if mean == "minfill":
-                el = cov[j,i]
-            elif mean == "geom":
-                el = np.sqrt(cov[j,j]*cov[i,i])
-            elif mean == "arithm":
-                 el = 0.5*(cov[j,j]+cov[i,i])
-            cov[i,j] = cov[j,i] = el * np.sign(direction[i])* np.sign(direction[j])
-    if scale:
-        return cov/np.max(np.abs(direction))*shrink_fact
-    else:
-        return cov*shrink_fact
+def gs_cofficient(v1, v2):
+    return np.dot(v2, v1) / np.dot(v1, v1)
+ 
+def multiply(cofficient, v):
+    return map((lambda x : x * cofficient), v)
+ 
+def proj(v1, v2):
+    return multiply(gs_cofficient(v1, v2) , v1)
+ 
+def gs(X):
+    Y = []
+    for i in range(len(X)):
+        temp_vec = X[i]
+        for inY in Y :
+            proj_vec = proj(inY, X[i])
+            temp_vec = map(lambda x, y : x - y, temp_vec, proj_vec)
+        Y.append(temp_vec)
+    Y = np.array(Y)
+    for row in range(Y.shape[0]):
+        Y[row,:] = Y[row,:] / np.linalg.norm(Y[row,:])
+    return Y
 
-def pmc_sampling(num_samples, theta, prior, llhood, llhood_grad, population_size = 20, grad_proposal = True):
-    rval = [theta.copy()]
-    lpr = [prior.logpdf(theta)]
-    lpr_gr = [prior.logpdf_grad(theta)]
-    llh = [llhood(theta)]
-    llh_gr = [llhood_grad(theta)]
-    f_samp = [1.9*10**-4] # [2*10**-4] best_step_size(theta, lpr_gr[-1] + llh_gr[-1], llhood)
-    f = f_samp[-1]    #scalar projection s of a on b can be computed using s=|a|cosθ = a.T.dot(b)/length(b)
+
+def construct_covar_in_direction(direction, scale=False, mean="min", shrink_fact = 1):
+    direction = direction.flat[:]
+    var = np.linalg.norm(direction)
+    vs = np.vstack([direction.flat[:], np.eye(len(direction))[:-1,:]])
+    bas = gs(vs)
+    ew = np.eye(len(direction))*0.5
+    ew[0,0] = var * 0.5
+    return bas.T.dot(ew).dot(np.linalg.inv(bas.T))
+
+def pmc_sampling(num_samples, theta, prior, llhood, llhood_grad, momentum = 0, population_size = 20, grad_proposal = True):
+    initial_particles = population_size * 3
+    rval = [prior.rvs() for _ in range(initial_particles)]
+    lpr = [prior.logpdf(theta) for theta in rval]
+    lpr_gr = [prior.logpdf_grad(theta) for theta in rval]
+    llh = [llhood(theta) for theta in rval]
+    llh_gr = [llhood_grad(theta) for theta in rval]
+    f_samp = [best_step_size(rval[i], lpr_gr[i] + llh_gr[i], llhood) for i in range(len(rval))]
+    
     i = -5
-    while len(rval) < num_samples:
+    while len(rval) - initial_particles < num_samples:
         part_idx = np.random.permutation(range(len(rval)) * (population_size + 1))[:population_size]
         pop = []
         prop_lpdf = []
         prop_llhood = []
         prop_lprior = []
         prop_logw = []
-        prop_scal_proj = []
+        #prop_scal_proj = []
+        prop_f = []
         prev_prob = np.array(lpr) + np.array(llh)
         prev_prob = exp(prev_prob - logsumexp(prev_prob))
+        
         
         while len(pop) < population_size: #idx in part_idx:
             while True:
@@ -103,10 +147,10 @@ def pmc_sampling(num_samples, theta, prior, llhood, llhood_grad, population_size
                 dim = np.prod(rval[idx].shape)
                 prop_dist = stats.multivariate_normal(rval[idx], np.eye(dim))
             else:
-                #f = best_step_size(rval[idx], lpr_gr[idx] + llh_gr[idx], llhood)
+                f = f_samp[idx]
                 scaled_grad = f * (lpr_gr[idx] + llh_gr[idx])
-                mu = rval[idx] + scaled_grad
-                cov = construct_covar_in_direction(scaled_grad, scale = True)
+                mu = rval[idx] + scaled_grad * 0.8 # FIXME: used to be without the 0.5
+                cov = ideal_covar(scaled_grad, 0.8, 0.4)
                 prop_dist = stats.multivariate_normal(mu, cov)
                 if  i > 0 and i < 5:
                     i += 1
@@ -119,12 +163,18 @@ def pmc_sampling(num_samples, theta, prior, llhood, llhood_grad, population_size
             prop_llhood.append(llhood(samp))
             prop_lprior.append(prior.logpdf(samp))
             prop_logw.append(prop_llhood[-1] + prop_lprior[-1] - prop_lpdf[-1])
-            
+
             step = samp - rval[idx]
             
             if grad_proposal:
-                proj_rel_step = step.T.dot(scaled_grad)/np.linalg.norm(scaled_grad)**2
-                prop_scal_proj.append(f*proj_rel_step)
+                #proj_rel_step = step.T.dot(scaled_grad)/np.linalg.norm(scaled_grad)**2
+                #prop_scal_proj.append(f*proj_rel_step)
+                if prop_llhood[-1] + prop_lprior[-1] < (lpr[idx] + llh[idx]):
+                    #This learning rate was too bold.
+                    prop_f.append(f*0.5)
+                else:
+                    prop_f.append(f*1.05)
+                    
         prop_w = exp(np.array(prop_logw) - logsumexp(prop_logw))
         while True:
             try:
@@ -140,21 +190,21 @@ def pmc_sampling(num_samples, theta, prior, llhood, llhood_grad, population_size
             lpr_gr.append(prior.logpdf_grad(samp))
             llh.append(prop_llhood[idx])
             llh_gr.append(llhood_grad(pop[idx]))
-            if grad_proposal and prop_scal_proj[idx] >0 and prop_scal_proj[idx] <1:
-                f_samp.append(prop_scal_proj[idx])
+            if grad_proposal:
+                f_samp.append(prop_f[idx])
         #f = np.mean(f_samp[-20:])
         #print(np.floor(100 * len(rval) / num_samples), "% of samples")
         i += 1
     rval = np.array(rval)
     #print(rval,"\n", f_samp, np.mean(f_samp), f_samp[0])
-    return rval      
+    return rval[initial_particles:]    
 
 
-num_post_samp = 100
+num_post_samp = 1000
 
 num_obs = 100
-num_dims = 30
-num_datasets = 50
+num_dims = 2 #30
+num_datasets = 100#50
 datasets = simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 4)
 nograd_sqerr = []
 grad_sqerr = []
