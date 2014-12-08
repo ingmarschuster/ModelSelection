@@ -24,7 +24,7 @@ import collections
 def slice_sample_component(rv, idx, log_likelihood, prior, cur_ll = None, width = None, max_steps = 10, left = None, right = None):
     #rv: Matrix, deren Komponentnen gesampled werden sollen
     
-    #idx: indices der Komponente, die gesampled werden sollen, für komponente 0,0: idx =([0],[0])
+    #idx: indices of the component to be sampled; for component 0,0: idx =([0],[0])
     
     #log_likelihood: Funktion ohne Parameter, aufrufbar als log_likelihood()
     ##class Model:
@@ -293,6 +293,34 @@ def slice_sample_all_components(rv, log_likelihood, prior, width = None):
                                         cur_ll = cur_ll,
                                         width=width)
         #print( pre_ll,"  ", i_pre, "->", cur_ll,"  ", rv[i], file=sys.stderr)
+
+def slice_sample_all_components_mvprior(rv, log_likelihood, prior, width = None):
+    if len(rv.shape) > 1:
+        rv = rv.flat
+    log = logging.getLogger("sampling")
+    """Slice sample components of rv according to a single 'prior' over all components or a prior for each component in 'prior_list'.
+       'rv' is expected to be a flat numpy array (ie as returned by the .flat property of an array).
+       if 'log_likelihood' is None, it's expected to be equal everywhere and the methods just samples from the prior."""
+        
+    if log_likelihood != None:
+        cur_ll = log_likelihood()
+    else:
+        cur_ll = None
+        
+    for i in npr.permutation(len(rv)):
+        pre_ll = cur_ll
+        i_pre = rv[i]
+        class comp_prior(object):
+            def logpdf(self, x):
+                rv[i] = x
+                return prior.logpdf(rv)
+                
+        cur_ll = slice_sample_component(rv,
+                                        i,
+                                        log_likelihood,
+                                        comp_prior(),
+                                        cur_ll = cur_ll,
+                                        width=width)
         
 
 def slice_sample_all_components_optimized(rv_mdl, glob_mdl, data, prior, rows = None, cols = None , width = None):

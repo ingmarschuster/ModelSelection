@@ -10,7 +10,7 @@ from numpy import exp, log, sqrt
 from scipy.misc import logsumexp
 import numpy as np
 import scipy.stats as stats
-from invwishart import invwishart_rv
+from distributions import invwishart_rv
 
 def simple_gaussian(dims = 1, observations_range = range(10,101,10), num_datasets = 10, cov_var_const = 4):
     ds = {}
