@@ -153,8 +153,8 @@ def logbias2exp(log_true_theta, log_estimates, signs_truth = None, signs_estim =
 
 def logstatistics(est):
     res = {}
-    for obs_size in est:  
-        res[obs_size] = {"bias^2":{},
+    for num_samples in est:  
+        res[num_samples] = {"bias^2":{},
                          "var": {},
                          "mse":{},
                          "bias^2{ }(relat)":{}, 
@@ -163,12 +163,12 @@ def logstatistics(est):
                          }
         # now calculate bias, variance and mse of estimators when compared
         # to analytic evidence
-        for estim in est[obs_size]:
+        for estim in est[num_samples]:
             if estim == "GroundTruth":
                 #Analytical evidence is not to be evaluated
                 continue
-            estimate = est[obs_size][estim]
-            analytic = est[obs_size]["GroundTruth"].reshape((len(est[obs_size]["GroundTruth"]), 1))
+            estimate = est[num_samples][estim]
+            analytic = est[num_samples]["GroundTruth"].reshape((len(est[num_samples]["GroundTruth"]), 1))
             est_rel = estimate - analytic
             
             bias2 = logbias2exp(analytic, estimate, axis = 0)
@@ -178,12 +178,54 @@ def logstatistics(est):
             mse = logmseexp(analytic, estimate, axis = 0)
             mse_rel = logmseexp(np.atleast_2d(0), est_rel, axis = 0)
             
-            res[obs_size]["bias^2"][estim] = bias2.flat[:]
-            res[obs_size]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
-            res[obs_size]["var"][estim] =  var.flat[:]
-            res[obs_size]["var{ }(relat)"][estim] =  var_rel.flat[:]
-            res[obs_size]["mse"][estim] =  mse.flat[:]
-            res[obs_size]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
+            res[num_samples]["bias^2"][estim] = bias2.flat[:]
+            res[num_samples]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
+            res[num_samples]["var"][estim] =  var.flat[:]
+            res[num_samples]["var{ }(relat)"][estim] =  var_rel.flat[:]
+            res[num_samples]["mse"][estim] =  mse.flat[:]
+            res[num_samples]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
+            #print(logsubtrexp(logaddexp(bias2, var)[0], mse)[0],"\n",
+            #      logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])
+            decomp_err = logmeanexp(logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])[0]
+          
+            if decomp_err >= -23: # error in original space >= 1e-10 
+                print("large mse decomp error, on average", decomp_err)
+    return res
+
+
+def statistics(est):
+    res = {}
+    for num_samples in est:  
+        res[num_samples] = {"bias^2":{},
+                         "var": {},
+                         "mse":{},
+                         "bias^2{ }(relat)":{}, 
+                         "var{ }(relat)": {}, 
+                         "mse{ }(relat)":{}
+                         }
+        # now calculate bias, variance and mse of estimators when compared
+        # to analytic evidence
+        for estim in est[num_samples]:
+            if estim == "GroundTruth":
+                #Analytical evidence is not to be evaluated
+                continue
+            estimate = est[num_samples][estim]
+            analytic = est[num_samples]["GroundTruth"].reshape((len(est[num_samples]["GroundTruth"]), 1))
+            est_rel = estimate / analytic
+            
+            bias2 = (estimate - analytic).mean(0).mean()**2
+            bias2_rel = (estimate - 1).mean(0).mean()**2
+            var = estimate.var(0).mean()
+            var_rel = est_rel.var(0).mean()
+            mse = ((estimate - analytic)**2).mean()
+            mse_rel = l((est_rel - 1)**2).mean()
+            
+            res[num_samples]["bias^2"][estim] = bias2.flat[:]
+            res[num_samples]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
+            res[num_samples]["var"][estim] =  var.flat[:]
+            res[num_samples]["var{ }(relat)"][estim] =  var_rel.flat[:]
+            res[num_samples]["mse"][estim] =  mse.flat[:]
+            res[num_samples]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
             #print(logsubtrexp(logaddexp(bias2, var)[0], mse)[0],"\n",
             #      logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])
             decomp_err = logmeanexp(logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])[0]

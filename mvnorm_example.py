@@ -119,13 +119,13 @@ lowdisc_seq_sob = i4_sobol_generate(dims, num_imp_samples , 2).T
 
 
 est = {}
-num_evid_samp = np.logspace(1, np.log10(num_imp_samples), 15, base=10).astype(int)
+num_est_samp = np.logspace(1, np.log10(num_imp_samples), 15, base=10).astype(int)
 
-for obs_size in datasets:
-    est[obs_size] = {"GroundTruth":[]}
+for num_obs in datasets:
+    est[num_obs] = {"GroundTruth":[]}
     for estim in ["qis(sobol)","is","priorIs"]:
-        est[obs_size][estim] = []
-    for ds in datasets[obs_size]:
+        est[num_obs][estim] = []
+    for ds in datasets[num_obs]:
         D = ds["obs"]
         
         ## Sample from and fit gaussians to the posteriors ##
@@ -141,7 +141,7 @@ for obs_size in datasets:
         ((mu_post, K_post, Ki_post),
          evid) = analytic_postparam_logevidence_mvnorm_known_K_li(D, mu_pr, K_pr, K_li)
         #print("Analytic",mu_post, K_post, "\nFit", param_fit,"\n")
-        est[obs_size]["GroundTruth"].append(evid)
+        est[num_obs]["GroundTruth"].append(evid)
         
         
         
@@ -154,23 +154,23 @@ for obs_size in datasets:
         qis_samples = fit.ppf(lowdisc_seq_sob).reshape((num_imp_samples, dims))
         (qis_sob_w, qis_sob_w_norm) = importance_weights(D, llhood_func, pr, fit,
                                                          qis_samples)
-        est[obs_size]["qis(sobol)"].append(evidence_from_importance_weights(qis_sob_w, num_evid_samp))
+        est[num_obs]["qis(sobol)"].append(evidence_from_importance_weights(qis_sob_w, num_est_samp))
         
         ## draw standard importance samples
         
         
         (is_w, is_w_norm) = importance_weights(D, llhood_func, pr, fit,
                                                fit.rvs(num_imp_samples).reshape((num_imp_samples, dims)))
-        est[obs_size]["is"].append(evidence_from_importance_weights(is_w, num_evid_samp))
+        est[num_obs]["is"].append(evidence_from_importance_weights(is_w, num_est_samp))
         
         
         ## draw importance samples from the prior
         (prior_is_w, prior_is_w_norm) = importance_weights(D, llhood_func, pr, pr,
                                                pr.rvs(num_imp_samples).reshape((num_imp_samples, dims)))
-        est[obs_size]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_evid_samp))
+        est[num_obs]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_est_samp))
 
-    for key in est[obs_size]:
-        est[obs_size][key] = np.array(est[obs_size][key])
+    for key in est[num_obs]:
+        est[num_obs][key] = np.array(est[num_obs][key])
         
     
 
@@ -187,5 +187,5 @@ res_file_name = ("MV-Normal_" + str(dims)+"d_"
                  + str(num_imp_samples) + "_ImpSamp_" + str(time.clock()))
 print(res_file_name)
 with open("results/" + res_file_name + ".pickle", "wb") as f:
-    pickle.dump({"res":res, "#is-samp": num_evid_samp, "est": est}, f)
-plot_var_bias_mse(res, log(num_evid_samp), "MV-Normal", num_post_samples, num_imp_samples, dims, outfname = "results/"+res_file_name+".pdf")
+    pickle.dump({"res":res, "#is-samp": num_est_samp, "est": est}, f)
+plot_var_bias_mse(res, log(num_est_samp), "MV-Normal", num_post_samples, num_imp_samples, dims, outfname = "results/"+res_file_name+".pdf")
