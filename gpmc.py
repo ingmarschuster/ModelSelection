@@ -55,9 +55,9 @@ def plot_current_prop(current, proposal_mu, proposal_dist, fig_name="Gradient_PM
     #f.show()
     f.savefig(fig_name)
 
-def best_step_size(theta, gradient, llhood__and_grad_func):
-    step_sizes = 10**(-np.linspace(1,10, num=6)) #[10**-i for i in range(1,10)]
-    best = np.argmax( [llhood__and_grad_func(theta + f * gradient)[0] for f in step_sizes])
+def best_step_size(theta, gradient, llhood_and_grad_func):
+    step_sizes = 10**(-np.linspace(1,10, num=4)) #[10**-i for i in range(1,10)]
+    best = np.argmax( [llhood_and_grad_func(theta + f * gradient)[0] for f in step_sizes])
     return step_sizes[best]
 
 
@@ -70,27 +70,58 @@ def construct_covar_in_direction(direction, scale=False, mean="min", shrink_fact
     ew[0,0] = var * 0.5
     return bas.T.dot(ew).dot(np.linalg.inv(bas.T))
 
-def pmc_sampling(num_samples, theta, prior, llhood_and_grad, momentum = 0, population_size = 20, grad_proposal = True):
-    initial_particles = population_size * 3
-    rval = [prior.rvs().flatten() for _ in range(initial_particles)]
-    (lpr, lpr_gr) = [list(i) for i in 
-                         zip(*[prior.log_pdf_and_grad(j) for j in rval])]
-    (llh, llh_gr) = [list(i) for i in 
-                         zip(*[llhood_and_grad(j) for j in rval])]
-    
+def find_step_size(theta, f, lpost, grad, lpost_and_grad_func):
+    lpost_1 = -np.inf
+    while lpost_1 < lpost:
+        theta_1 = theta + f * grad
+        (lpost_1, grad_1) = lpost_and_grad(theta_1)
+        if lpost > lpost_1:
+            f = f * 0.5
+        else:
+            f = f* 1.05
+            break
+    return (f, theta_1, lpost_1, grad_1)
+
+def gradient_ascent(theta, lpost_and_grad, momentum = 0):
+    (lpost, grad) = lpost_and_grad(theta)
+    i = 0
+    f = 0.1
+    stayed = 0
+    moved = 0
+    while True:
+        (f, theta_1, lpost_1, grad_1) = find_step_size(theta, f, lpost, grad, lpost_and_grad)
+        (lpost, grad, theta) = (lpost_1, grad_1, theta_1) 
+        if np.abs(grad.mean()) < 0.1:
+            print("small gradient", np.abs(grad.mean()))
+            break
+        assert(not( np.any(np.isnan(theta)) or np.any(np.isnan(grad))))
+            
+        i += 1
+    print(moved, stayed)
+    return (theta, lpost)
+            
+        
+        
+        
+
+def pmc_sampling(num_samples, lpost_and_grad, initial_particles, momentum = 0, population_size = 20, grad_proposal = True):
+    rval = list(initial_particles)
+    dim = rval[0].size
+    num_initial = len(rval)
+    rval = [prior.rvs().flatten() for _ in range(num_initial)]
+    (lpost, post_gr) = [list(i) for i in 
+                         zip(*[lpost_and_grad(j) for j in rval])]
+    rval_step = [0.1] * num_initial
     i = -5
-    while len(rval) - initial_particles < num_samples:
-        part_idx = np.random.permutation(range(len(rval)) * (population_size + 1))[:population_size]
+    while len(rval) - num_initial < num_samples:
         pop = []
         prop_lpdf = []
-        prop_llhood = []
-        prop_lgrad= []
-        prop_lprior = []
-        prop_pgrad = []
+        prop_lpost = []
+        prop_grad= []
         prop_logw = []
-        #prop_scal_proj = []
+        
         prop_f = []
-        prev_prob = np.array(lpr) + np.array(llh)
+        prev_prob = np.array(lpost)
         prev_prob = prev_prob - logsumexp(prev_prob)
         
         
@@ -102,12 +133,23 @@ def pmc_sampling(num_samples, theta, prior, llhood_and_grad, momentum = 0, popul
                 dim = np.prod(rval[idx].shape)
                 prop_dist = stats.multivariate_normal(rval[idx].flatten(), np.eye(dim))
             else:
-                #print("Grad_prop")
-                f = best_step_size(rval[idx], lpr_gr[idx] + llh_gr[idx], llhood_and_grad) #f_samp[idx]
-                scaled_grad = f * (lpr_gr[idx] + llh_gr[idx])
-                mu = rval[idx] + scaled_grad #* 0.8 # FIXME: used to be without the 0.5
-                cov = ideal_covar(scaled_grad, fix_main_var = 0.3, other_var = 0.3) # , fix_main_var=1
-                prop_dist = mvnorm(mu, cov)
+                if np.abs(post_gr[idx].mean()) < 0.1:
+                    #we are close to a local maximum
+                    if stats.bernoulli.rvs(0.1):
+                        # take a random step with large variance
+                        f = 0.1
+                        prop_dist = mvt(rval[idx], np.eye(dim)*10, dim)
+                    else:
+                        # take a random step with small variance
+                        #(stay in region of high posterior probability)
+                        f = rval_step[idx]
+                        prop_dist = mvt(rval[idx], np.eye(dim)*0.5, dim)
+                else:
+                    #we are at a distance to a local maximum
+                    #step in direction of gradient.
+                    (f, theta_1, lpost_1, grad_1)  = find_step_size(rval[idx], rval_step[idx], lpost[idx], post_gr[idx], lpost_and_grad)
+                    cov = ideal_covar(f * 0.5 * post_gr[idx], main_var_scale = 1, other_var = 0.5) # , fix_main_var=1
+                    prop_dist = mvnorm(rval[idx] + f * 0.5 * post_gr[idx], cov)
                 if  i > 0 and i < 5:
                     i += 1
                     #print(cov)
@@ -115,57 +157,48 @@ def pmc_sampling(num_samples, theta, prior, llhood_and_grad, momentum = 0, popul
            
             samp = prop_dist.rvs()
             pop.append(samp)
+            (samp_lpost, samp_grad) = lpost_and_grad(samp)
+            prop_lpost.append(samp_lpost)
+            prop_grad.append(samp_grad)
             prop_lpdf.append(prop_dist.logpdf(samp))
             
-            (ll, gr) = llhood_and_grad(samp)
-            prop_llhood.append(ll)
-            prop_lgrad.append(gr)
-            
-            (lp, pgr) = prior.log_pdf_and_grad(samp)
-            prop_lprior.append(lp)
-            prop_pgrad.append(pgr)
-            prop_logw.append(prop_llhood[-1] + prop_lprior[-1] - prop_lpdf[-1])
-
-            
+            prop_logw.append(prop_lpost[-1] - prop_lpdf[-1])
             if grad_proposal:
-                #step = samp - rval[idx]
-                #proj_rel_step = step.T.dot(scaled_grad)/np.linalg.norm(scaled_grad)**2
-                #prop_scal_proj.append(f*proj_rel_step)
-                if prop_llhood[-1] + prop_lprior[-1] < (lpr[idx] + llh[idx]):
-                    #This learning rate was too bold.
-                    prop_f.append(f*0.5)
-                else:
-                    prop_f.append(f*1.05)
+                prop_f.append(f)
+
                     
         prop_w = exp(np.array(prop_logw) - logsumexp(prop_logw))
         while True:
             try:
-                draws = np.random.multinomial(1, prop_w, population_size)
+                draws = np.random.multinomial(population_size, prop_w)
                 break
             except ValueError:
                 prop_w /= prop_w.sum()
-        samp_idxs = np.argmax(draws, 1)
-        for idx in samp_idxs:
-            rval.append(samp)
-            lpr.append(prop_lprior[idx])
-            
-            llh.append(prop_llhood[idx])
-            if grad_proposal:
-                lpr_gr.append(prop_pgrad[idx])                
-                llh_gr.append(prop_lgrad[idx])
+                
+        for idx in range(len(draws)):
+            (s, lp, p_gr)    = (np.copy(pop[idx]),
+                                np.copy(prop_lpost[idx]), 
+                                np.copy(prop_grad[idx]))
+            for _ in range(draws[idx]):
+                rval.append(s)
+                lpost.append(lp)
+                
+                post_gr.append(p_gr)
+                if grad_proposal:
+                    rval_step.append(prop_f[idx])
         #f = np.mean(f_samp[-20:])
         #print(np.floor(100 * len(rval) / num_samples), "% of samples")
         i += 1
     rval = np.array(rval)
     #print(rval,"\n", f_samp, np.mean(f_samp), f_samp[0])
-    return np.array(rval[initial_particles:])
+    return np.array(rval[num_initial:])
 
 
 num_post_samp = 1000
 
 num_obs = 100
 num_dims = 2 #30
-num_datasets = 50#50
+num_datasets = 5#50
 datasets = simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 4)
 nograd_sqerr = []
 grad_sqerr = []
@@ -188,12 +221,14 @@ for num_obs in datasets:
         est[num_obs][estim] = []
     for Data in datasets[num_obs]:        
         ds_c += 1
-        print("Dataset",ds_c)
         obs = Data["obs"]
         
         truth = Data["params"][0]
         
+        print("Dataset",ds_c, "Truth:", truth)        
+        
         est[num_obs]["GroundTruth"].append(truth)
+        o_m = obs.mean(0)
         obs_K =  Data["params"][1]
         obs_Ki = np.linalg.inv(obs_K)
         obs_L = np.linalg.cholesky(obs_K)
@@ -213,7 +248,12 @@ for num_obs in datasets:
             d = mvnorm(theta,  obs_K, Ki = obs_Ki, logdet_K = obs_logdet_K, L = obs_L)
             (llh, gr) = d.log_pdf_and_grad(obs)
             return (llh.sum(), -gr.sum(0).flatten())
-            
+        
+        def lpost_and_grad(theta):
+            (lpr, pr_grad) = prior.log_pdf_and_grad(theta)
+            (llh, lh_grad) = llhood_and_grad(theta)
+            return (lpr + llh, pr_grad + lh_grad)
+        
         if False:
             obs_m = obs.mean(0)+10
             (lp, lg) = mvnorm(obs_m, obs_K).log_pdf_and_grad(obs)
@@ -223,15 +263,18 @@ for num_obs in datasets:
             exit(0)
             #print("gradient check", optimize.check_grad(llhood, llhood_grad, np.array([0]*num_dims)), llhood_grad(obs.mean(0)))
             #assert()
-
-        s_nograd = pmc_sampling(num_post_samp, np.array([0]*num_dims), prior, llhood_and_grad, population_size = 4, grad_proposal = False)
+            
+        #ga_theta = gradient_ascent(prior.rvs(), lpost_and_grad)
+        #print( o_m, ga_theta[0])
+        #continue #exit(0)
+        s_nograd = pmc_sampling(num_post_samp, lpost_and_grad, [prior.rvs() for _ in range(10)], population_size = 4, grad_proposal = False)
     
         est[num_obs]["pmc"].append(mean_of_samples(s_nograd, num_est_samp))
         ng_llc = int(llg_count)
         ll_count[:] = 0
         llg_count[:] = 0
         
-        s_grad = pmc_sampling(num_post_samp, np.array([0]*num_dims), prior, llhood_and_grad, population_size = 4, grad_proposal = True)
+        s_grad = pmc_sampling(num_post_samp, lpost_and_grad, [prior.rvs() for _ in range(10)], population_size = 4, grad_proposal = True)
         est[num_obs]["gpmc"].append(mean_of_samples(s_grad, num_est_samp))
         grad_llc =  int(llg_count)
         ll_count[:] = 0
@@ -252,7 +295,7 @@ for num_obs in datasets:
         ss_llc = int(ll_count)
         ll_count[:] = 0
         llg_count[:] = 0
-        o_m = obs.mean(0)
+        
         nograd_sqerr.append(((o_m - s_nograd.mean(0))**2).mean())
         grad_sqerr.append(((o_m - s_grad.mean(0))**2).mean())
         slice_sqerr.append(((o_m - s_gibbs_slice.mean(0))**2).mean())
