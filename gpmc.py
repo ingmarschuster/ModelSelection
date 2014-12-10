@@ -23,6 +23,7 @@ from distributions.linalg import pdinv
 from synthdata import simple_gaussian
 import slice_sampling
 from gs_basis import ideal_covar
+from optimization import find_step_size
 
 from scipy import optimize
 
@@ -54,54 +55,7 @@ def plot_current_prop(current, proposal_mu, proposal_dist, fig_name="Gradient_PM
     
     #f.show()
     f.savefig(fig_name)
-
-def best_step_size(theta, gradient, llhood_and_grad_func):
-    step_sizes = 10**(-np.linspace(1,10, num=4)) #[10**-i for i in range(1,10)]
-    best = np.argmax( [llhood_and_grad_func(theta + f * gradient)[0] for f in step_sizes])
-    return step_sizes[best]
-
-
-def construct_covar_in_direction(direction, scale=False, mean="min", shrink_fact = 1):
-    direction = direction.flat[:]
-    var = np.linalg.norm(direction)
-    vs = np.vstack([direction.flat[:], np.eye(len(direction))[:-1,:]])
-    bas = gs(vs)
-    ew = np.eye(len(direction))*0.5
-    ew[0,0] = var * 0.5
-    return bas.T.dot(ew).dot(np.linalg.inv(bas.T))
-
-def find_step_size(theta, f, lpost, grad, lpost_and_grad_func):
-    lpost_1 = -np.inf
-    while lpost_1 < lpost:
-        theta_1 = theta + f * grad
-        (lpost_1, grad_1) = lpost_and_grad(theta_1)
-        if lpost > lpost_1:
-            f = f * 0.5
-        else:
-            f = f* 1.05
-            break
-    return (f, theta_1, lpost_1, grad_1)
-
-def gradient_ascent(theta, lpost_and_grad, momentum = 0):
-    (lpost, grad) = lpost_and_grad(theta)
-    i = 0
-    f = 0.1
-    stayed = 0
-    moved = 0
-    while True:
-        (f, theta_1, lpost_1, grad_1) = find_step_size(theta, f, lpost, grad, lpost_and_grad)
-        (lpost, grad, theta) = (lpost_1, grad_1, theta_1) 
-        if np.abs(grad.mean()) < 0.1:
-            print("small gradient", np.abs(grad.mean()))
-            break
-        assert(not( np.any(np.isnan(theta)) or np.any(np.isnan(grad))))
-            
-        i += 1
-    print(moved, stayed)
-    return (theta, lpost)
-            
-        
-        
+       
         
 
 def pmc_sampling(num_samples, lpost_and_grad, initial_particles, momentum = 0, population_size = 20, grad_proposal = True):
@@ -121,7 +75,7 @@ def pmc_sampling(num_samples, lpost_and_grad, initial_particles, momentum = 0, p
         prop_logw = []
         
         prop_f = []
-        prev_prob = np.array(lpost)
+        prev_prob = [0] * len(lpost)
         prev_prob = prev_prob - logsumexp(prev_prob)
         
         
@@ -138,16 +92,16 @@ def pmc_sampling(num_samples, lpost_and_grad, initial_particles, momentum = 0, p
                     if stats.bernoulli.rvs(0.1):
                         # take a random step with large variance
                         f = 0.1
-                        prop_dist = mvt(rval[idx], np.eye(dim)*10, dim)
+                        prop_dist = mvt(rval[idx], np.eye(dim)*100, dim)
                     else:
                         # take a random step with small variance
                         #(stay in region of high posterior probability)
                         f = rval_step[idx]
-                        prop_dist = mvt(rval[idx], np.eye(dim)*0.5, dim)
+                        prop_dist = mvt(rval[idx], np.eye(dim), dim)
                 else:
                     #we are at a distance to a local maximum
                     #step in direction of gradient.
-                    (f, theta_1, lpost_1, grad_1)  = find_step_size(rval[idx], rval_step[idx], lpost[idx], post_gr[idx], lpost_and_grad)
+                    (f, theta_1, lpost_1, grad_1, foo)  = find_step_size(rval[idx], rval_step[idx], lpost[idx], post_gr[idx], lpost_and_grad)
                     cov = ideal_covar(f * 0.5 * post_gr[idx], main_var_scale = 1, other_var = 0.5) # , fix_main_var=1
                     prop_dist = mvnorm(rval[idx] + f * 0.5 * post_gr[idx], cov)
                 if  i > 0 and i < 5:
@@ -199,7 +153,7 @@ num_post_samp = 1000
 num_obs = 100
 num_dims = 2 #30
 num_datasets = 5#50
-datasets = simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 4)
+datasets = simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 40)
 nograd_sqerr = []
 grad_sqerr = []
 slice_sqerr = []
@@ -213,6 +167,8 @@ ss_llc = 0
 ds_c = 0
 est = {}
 num_est_samp = np.logspace(1, np.log10(num_post_samp), 15, base=10).astype(int)
+
+prior = mvnorm(np.array([0]*num_dims), np.eye(num_dims) * 50)
 
 print("Starting simulation")
 for num_obs in datasets:
@@ -235,7 +191,7 @@ for num_obs in datasets:
         obs_logdet_K = np.linalg.slogdet(obs_K)[1]
         
         
-        prior = mvnorm(np.array([0]*num_dims), np.eye(num_dims) * 50)
+        
         
         
         def llhood(theta):
