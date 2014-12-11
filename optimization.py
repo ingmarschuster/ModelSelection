@@ -36,7 +36,7 @@ def find_step_size(theta, f, lpost, search_direc, func_and_grad):
     back_off = 0
     while lpost_1 < lpost:
         theta_1 = theta + f * search_direc
-        (lpost_1, grad_1) = func_and_grad(theta_1)
+        lpost_1 = func_and_grad(theta_1, grad = False)
         if lpost > lpost_1:
             f = f * 0.5
             back_off +=1
@@ -44,7 +44,7 @@ def find_step_size(theta, f, lpost, search_direc, func_and_grad):
             f = f* 1.05
             
             break
-    return (f, theta_1, lpost_1, grad_1, back_off)
+    return (f, theta_1, lpost_1, back_off)
 
 def gradient_ascent(theta_0, func_and_grad, maxiter = 1000, quiet = True):
     (fval_0, grad_0) = func_and_grad(theta_0)
