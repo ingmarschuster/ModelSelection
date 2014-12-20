@@ -12,11 +12,19 @@ import numpy as np
 from numpy import log, exp
 from scipy.misc import logsumexp
 
+
+
+
 import matplotlib
 
 import matplotlib.cm as cm
 import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
+
+from modsel.mc import mcmc
+from modsel.mixture import TMM, GMM
+
+
 
 matplotlib.rcParams['xtick.direction'] = 'out'
 matplotlib.rcParams['ytick.direction'] = 'out'
@@ -24,17 +32,29 @@ matplotlib.rcParams['ytick.direction'] = 'out'
 
 delta = 0.025
 
-lim = 5
-X = np.arange(-lim, lim, delta)
+lim = 10
+X = np.arange(-4, 2, delta)
 (X,Y) = np.meshgrid(X, X)
 X = X
 Y = Y
 
+dims = 2
 
 
+def mm_dens(x):
+    norm_const = 1
+    # Some multimodal density
+    x = np.atleast_2d(x)
+    uvn = stats.norm(0,1)
+    mvn = stats.multivariate_normal(np.zeros(dims),5*np.eye(dims))
+    rval = uvn.logcdf(np.sin(x.sum(1)))+ mvn.logpdf(x)
+    return log(norm_const)+rval
 
 
+def sample_params(num_samples):    
+    (s, tr) = mcmc.sample(num_samples, -2*np.ones(dims), mcmc.ComponentWiseSliceSamplingKernel(mm_dens))
 
+    return s
 
 if False:
 
@@ -51,14 +71,21 @@ if False:
     plt.title('Simplest default with labels')
 
 
-def mm_dens(x):
-    uvn = stats.norm(0,1)
-    mvn = stats.multivariate_normal(np.zeros(2),5*np.eye(2))
-    return exp(uvn.logcdf(np.sin(x.sum(1)))+mvn.logpdf(x))
 
 def apply_to_mg(func, *mg):
     x = np.vstack([e.flat for e in mg]).T
     return func(x).reshape(mg[0].shape)
 
+s = sample_params(1000)
+
+fit = TMM(2, 2, samples = s)
+
 plt.figure()
-CS = plt.contour(X,Y,apply_to_mg(mm_dens, X,Y))
+CS = plt.contour(X,Y,exp(apply_to_mg(mm_dens, X,Y)))
+plt.close()
+
+plt.figure()
+CS = plt.contour(X,Y,exp(apply_to_mg(lambda x: fit.logpdf(x), X,Y)))
+plt.close()
+
+print(mm_dens([[-2.1,-2.1], [0.8,0.8], [0,0]]))

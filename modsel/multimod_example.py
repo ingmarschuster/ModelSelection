@@ -17,21 +17,22 @@ import cPickle as pickle
 
 import time
 
-from slice_sampling import slice_sample_all_components
+from modsel.mc import mcmc
 
 from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import halton
 import synthdata
 from plotting import plot_var_bias_mse
 from evidence import importance_weights, analytic_postparam_logevidence_mvnorm_known_K_li, evidence_from_importance_weights
-from distributions import norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart
-from distributions import mvnorm
+from modsel.distributions import norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart
+from modsel.distributions import mvnorm
 
-import mixture
+import modsel.mixture
 #from scipy.stats import norm as mvnorm
 
 import estimator_statistics as eststat
 
+np.random.seed(1)
 
 dims = 2
 
@@ -42,7 +43,8 @@ num_post_samples = 1000
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
 num_imp_samples = 10000
 
-norm_const = 1
+#norm_const = exp(log_norm_const)
+log_norm_const = -900
 
 
 class dummy_prior(object):
@@ -54,23 +56,26 @@ def mm_dens_(x):
     mvn = stats.multivariate_normal(np.zeros(dims),5*np.eye(dims))
     return log(x[:,0])*2+mvn.logpdf(x)
 
-def mm_dens(x):
+def mm_dens_(x):
     # Some multimodal density
     x = np.atleast_2d(x)
     uvn = stats.norm(0,1)
     mvn = stats.multivariate_normal(np.zeros(dims),5*np.eye(dims))
     rval = uvn.logcdf(np.sin(x.sum(1)))+ mvn.logpdf(x)
-    return log(norm_const)+rval
+    return log_norm_const+rval
+
+def gauss_dens(x):
+    return log_norm_const+stats.multivariate_normal.logpdf(x,
+                                                           np.ones(dims)*(-10),
+                                                           np.ones((dims, dims))*3)
+
+
+mm_dens = gauss_dens
 
 def sample_params(num_samples):
-    rval = []
-    mu = -2*np.ones(dims)
-    
-    for i in range(num_samples):
-        print("Posterior sample", i)
-        slice_sample_all_components(mu, lambda: mm_dens(mu), dummy_prior())        
-        rval.append(mu.copy())
-    return np.array(rval)
+    (s, tr) = mcmc.sample(num_samples, -2*np.ones(dims), mcmc.ComponentWiseSliceSamplingKernel(mm_dens))
+
+    return s
 
 
 
@@ -100,10 +105,10 @@ for num_obs in [0]:
         
         ## Sample from function and fit gaussians to the posteriors ##
         samp = sample_params(num_post_samples)
-                        
-        fit = mixture.GMM(samp, 2)
+        
+        fit = modsel.mixture.GMM(2, dims, samples = samp)
        # assert()
-        est[num_obs]["GroundTruth"].append(log(norm_const))
+        est[num_obs]["GroundTruth"].append(log_norm_const)
         
         
         
@@ -112,7 +117,7 @@ for num_obs in [0]:
         logpost_unnorm = mm_dens
         
         qis_samples = fit.ppf(lowdisc_seq_sob).reshape((num_imp_samples, dims))
-        (qis_sob_w, qis_sob_w_norm) = importance_weights(mm_dens, fit,qis_samples)
+        (qis_sob_w, qis_sob_w_norm) = importance_weights(mm_dens, fit, qis_samples)
         est[num_obs]["qis(sobol)"].append(evidence_from_importance_weights(qis_sob_w, num_est_samp))
         
         ## draw standard importance samples
@@ -135,8 +140,7 @@ for num_obs in [0]:
 
 res = eststat.logstatistics(est)
         
-
-
+print(res, est)
 
 res_file_name = ("Multimodal_" + str(dims)+"d_"
                  + str(num_post_samples)  + "_McmcSamp_"

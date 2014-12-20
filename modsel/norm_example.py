@@ -14,7 +14,6 @@ import cPickle as pickle
 
 import time
 
-from slice_sampling import slice_sample_all_components
 
 from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import halton
@@ -24,38 +23,29 @@ from evidence import importance_weights, analytic_logevidence_scalar_gaussian, e
 
 import estimator_statistics as eststat
 
+from mc import mcmc
 
-def sample_params(num_samples, D, mu_pr, sd_pr, sd_li):    
-    rval = []
+
+def sample_params(num_samples, D, mu_pr, sd_pr, sd_li): 
     prior = stats.norm(mu_pr, sd_pr)
-    theta = prior.rvs((1,))
-    for i in range(num_samples):
-        print("Posterior sample", i)
-        slice_sample_all_components(theta, lambda: stats.norm.logpdf(D, theta, sd_li).sum(), prior)
-        rval.append(theta.copy())
-    return np.array(rval)
+    
+    def lpost(x):
+        return stats.norm.logpdf(D, x, sd_li).sum() + prior.logpdf(x)
+        
+    (samp, trace) = mcmc.sample(num_samples, prior.rvs((1,)), mcmc.ComponentWiseSliceSamplingKernel(lpost))
 
-"""
-def importance_weights(D, sd_li, prior, proposal_dist, imp_samp):
-    w = ((prior.logpdf(imp_samp) # log prior of samples
-           + np.array([stats.norm.logpdf(D, mean, sd_li).sum()
-                           for mean in imp_samp])) # log likelihood of samples
-            - proposal_dist.logpdf(imp_samp) # log pdf of proposal distribution
-         )
-    w_norm = w - logsumexp(w)
-    return (w, w_norm)"""
-
+    return samp
 
 
 
 ## Number of posterior samples to draw ##
-num_post_samples = 500
+num_post_samples = 1000
 
 
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
 num_imp_samples = 1000
 
-num_datasets = 5
+num_datasets = 50
 
 ## Data generation ##
 
@@ -104,26 +94,26 @@ for num_obs in datasets:
         
         # draw quasi importance samples using the percent point function
         # (PPF, aka quantile function) where cdf^-1 = ppf 
-        def llhood_func(imp_samp): 
+        def logpost_unnorm(imp_samp): 
             return np.array([stats.norm.logpdf(D, mean, sd_li).sum()
-                           for mean in imp_samp])
+                           for mean in imp_samp]) + pr.logpdf(imp_samp)
         
-        (qis_w, qis_w_norm) = importance_weights(D, llhood_func, pr, fit,
+        (qis_w, qis_w_norm) = importance_weights(logpost_unnorm, fit,
                                                  fit.ppf(lowdisc_seq_sob))
         est[num_obs]["qis(sobol)"].append(evidence_from_importance_weights(qis_w, num_est_samp))
 
         if False:
-            (hqis_w, hqis_w_norm) = importance_weights(D, llhood_func, pr, fit,
+            (hqis_w, hqis_w_norm) = importance_weights(logpost_unnorm, fit,
                                                      fit.ppf(lowdisc_seq_halt))
             est[num_obs]["qis(halton)"].append(evidence_from_importance_weights(hqis_w, num_est_samp))
 
         ## draw standard importance samples        
-        (is_w, is_w_norm) = importance_weights(D, llhood_func, pr, fit,
+        (is_w, is_w_norm) = importance_weights(logpost_unnorm, fit,
                                                fit.rvs(num_imp_samples))
         est[num_obs]["is"].append(evidence_from_importance_weights(is_w, num_est_samp))
         
         ## draw importance samples from the prior       
-        (prior_is_w, prior_is_w_norm) = importance_weights(D, llhood_func, pr, pr,
+        (prior_is_w, prior_is_w_norm) = importance_weights(logpost_unnorm, pr,
                                                pr.rvs(num_imp_samples))
         est[num_obs]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_est_samp))
         

@@ -1,6 +1,6 @@
 [submodule "distributions"]
-	path = distributions
+	path = modsel/distributions
 	url = git@github.com:ingmarschuster/distributions.git
 [submodule "sobol_seq"]
-	path = sobol
+	path = modsel/sobol
 	url = git@github.com:ingmarschuster/sobol_seq.git

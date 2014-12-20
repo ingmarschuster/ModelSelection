@@ -92,9 +92,8 @@ def analytic_logevidence_scalar_gaussian(D, mu_pr, sd_pr, sd_li):
     #print(fact)
     return np.sum(fact)
 
-def importance_weights(D, llhood_func, prior, proposal_dist, imp_samp):
-    w = (prior.logpdf(imp_samp) # log prior of samples
-         + llhood_func(imp_samp) # log likelihood of samples
+def importance_weights(true_measure, proposal_dist, imp_samp):
+    w = (true_measure(imp_samp) # true (not necessarily normalized) measure of sample distribution
          - proposal_dist.logpdf(imp_samp) # log pdf of proposal distribution
          )
     w_norm = w - logsumexp(w)

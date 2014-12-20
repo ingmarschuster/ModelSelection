@@ -17,60 +17,27 @@ import cPickle as pickle
 
 import time
 
-from slice_sampling import slice_sample_all_components
+
 
 from sobol.sobol_seq import i4_sobol, i4_sobol_generate
 import halton
 import synthdata
 from plotting import plot_var_bias_mse
 from evidence import importance_weights, analytic_postparam_logevidence_mvnorm_known_K_li, evidence_from_importance_weights
-from distributions import norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart, sureevent
+from distributions import norm_invwishart, invwishart_logpdf, invwishart_rv, invwishart
 from distributions import mvnorm
-#from scipy.stats import norm as mvnorm
+
+from mc import mcmc
 
 import estimator_statistics as eststat
 
 
-def grad_imp_sample_params_known_K_li(num_samples, D, prior, K_li):
-    rval = []
-    mu = np.atleast_2d(prior.rvs())
-    def llhood():
-        return mvnorm(mu, K_li).logpdf(D).sum()
-    for i in range(num_samples):
-        print("Posterior sample", i)
-        slice_sample_all_components(mu, llhood, prior)        
-        rval.append(mu.copy())
-    return np.array(rval)
-
 def sample_params_known_K_li(num_samples, D, prior, K_li):
-    rval = []
-    mu = np.atleast_2d(prior.rvs())
-    def llhood():
-        return mvnorm(mu, K_li).logpdf(D).sum()
-    for i in range(num_samples):
-        print("Posterior sample", i)
-        slice_sample_all_components(mu, llhood, prior)        
-        rval.append(mu.copy())
-    return np.array(rval)
-    
-def sample_params_unknown_K_li(num_samples, D, K_pr, nu_pr, mu_pr, kappa_pr):
-    rval_K = []
-    rval_mu = []
-    K = np.atleast_2d(invwishart_rv(K_pr, nu_pr))
-    mu = np.atleast_2d(mvnorm(mu_pr, K / kappa_pr).rvs())
-    if len(mu.shape) == 0:
-        mu = mu.reshape((1, 1))
-        K = K.reshape((1, 1))
-    def llhood():
-        return mvnorm.logpdf(D).sum()
-    for i in range(num_samples):        
-        slice_sample_all_components(K, llhood, invwishart(K_pr, nu_pr))
-        slice_sample_all_components(mu, llhood, mvnorm(mu_pr, K / kappa_pr))
-        print("Posterior sample", i)
-        rval_K.append(K.copy())
-        rval_mu.append(mu.copy())
-    return (rval_mu, rval_K)
-
+    def lpost(x):
+        return mvnorm(x, K_li).logpdf(D).sum() + prior.logpdf(x)
+        
+    (samp, trace) = mcmc.sample(num_samples, prior.rvs(), mcmc.ComponentWiseSliceSamplingKernel(lpost))
+    return samp
 
 
 ## Dimension of Gaussian ##
@@ -86,7 +53,7 @@ num_imp_samples = 10000
 
 num_datasets = 50
 
-if True:
+if False:
     dims = 1
     num_obs=10
     num_post_samples = 100
@@ -147,25 +114,25 @@ for num_obs in datasets:
         
         # draw quasi importance samples using the pointwise percent point function
         # (PPF, aka quantile function) where cdf^-1 = ppf
-        def llhood_func(posterior_samples):
+        def logpost_unnorm(posterior_samples):
             return np.array([mvnorm(mean, K_li).logpdf(D).sum()
-                           for mean in posterior_samples])
+                                               for mean in posterior_samples]) + pr.logpdf(posterior_samples)
         
         qis_samples = fit.ppf(lowdisc_seq_sob).reshape((num_imp_samples, dims))
-        (qis_sob_w, qis_sob_w_norm) = importance_weights(D, llhood_func, pr, fit,
+        (qis_sob_w, qis_sob_w_norm) = importance_weights(logpost_unnorm, fit,
                                                          qis_samples)
         est[num_obs]["qis(sobol)"].append(evidence_from_importance_weights(qis_sob_w, num_est_samp))
         
         ## draw standard importance samples
         
         
-        (is_w, is_w_norm) = importance_weights(D, llhood_func, pr, fit,
+        (is_w, is_w_norm) = importance_weights(logpost_unnorm, fit,
                                                fit.rvs(num_imp_samples).reshape((num_imp_samples, dims)))
         est[num_obs]["is"].append(evidence_from_importance_weights(is_w, num_est_samp))
         
         
         ## draw importance samples from the prior
-        (prior_is_w, prior_is_w_norm) = importance_weights(D, llhood_func, pr, pr,
+        (prior_is_w, prior_is_w_norm) = importance_weights(logpost_unnorm, pr,
                                                pr.rvs(num_imp_samples).reshape((num_imp_samples, dims)))
         est[num_obs]["priorIs"].append(evidence_from_importance_weights(prior_is_w, num_est_samp))
 

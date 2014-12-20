@@ -10,7 +10,7 @@ from numpy import exp, log, sqrt
 from scipy.misc import logsumexp
 import numpy as np
 import scipy.stats as stats
-from estimator_statistics import *
+from modsel.estimator_statistics import *
 
 def test_log_subtr_add_exp():    
     for (m, s) in [(np.array([[-10.,   3.],[ -1.,   5.]]), np.array([-5.5,  4. ])),
@@ -51,7 +51,7 @@ def test_logvarexp():
               ):
         (la, sa) = log_sign(a)
         for ax in range(2):
-            lvar = logvarexp(la, sa, ax)
+            lvar = logvarexp(la, sa, ax).flatten()
             var = np.var(a, ax)
             assert((np.abs(var - exp(lvar)) < 1e-10).all()) 
     

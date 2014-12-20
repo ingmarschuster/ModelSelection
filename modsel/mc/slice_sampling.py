@@ -294,18 +294,17 @@ def slice_sample_all_components(rv, log_likelihood, prior, width = None):
                                         width=width)
         #print( pre_ll,"  ", i_pre, "->", cur_ll,"  ", rv[i], file=sys.stderr)
 
-def slice_sample_all_components_mvprior(rv, log_likelihood, prior, width = None):
+def slice_sample_all_components_mvprior(rv, log_likelihood, prior, width = None, cur_ll = None):
     if len(rv.shape) > 1:
         rv = rv.flat
     log = logging.getLogger("sampling")
     """Slice sample components of rv according to a single 'prior' over all components or a prior for each component in 'prior_list'.
        'rv' is expected to be a flat numpy array (ie as returned by the .flat property of an array).
        if 'log_likelihood' is None, it's expected to be equal everywhere and the methods just samples from the prior."""
-        
-    if log_likelihood != None:
-        cur_ll = log_likelihood()
-    else:
-        cur_ll = None
+    
+    if cur_ll is None:
+        if log_likelihood is not None:
+            cur_ll = log_likelihood()
         
     for i in npr.permutation(len(rv)):
         pre_ll = cur_ll
@@ -321,6 +320,7 @@ def slice_sample_all_components_mvprior(rv, log_likelihood, prior, width = None)
                                         comp_prior(),
                                         cur_ll = cur_ll,
                                         width=width)
+    return (rv, cur_ll + np.sum(prior.logpdf(rv)))
         
 
 def slice_sample_all_components_optimized(rv_mdl, glob_mdl, data, prior, rows = None, cols = None , width = None):
