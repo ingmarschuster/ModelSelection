@@ -50,7 +50,7 @@ class ConvergenceStats():
         Vector of autocorrelation values for a lag from zero to max possible
         """
         
-        GenericTests.check_type(x, "x", np.ndarray, 1)
+        assert(len(np.array(x).shape) == 1)
         
         # normalise, compute norm
         xunbiased = x - np.mean(x)

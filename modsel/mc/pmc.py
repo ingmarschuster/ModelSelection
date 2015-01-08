@@ -19,13 +19,14 @@ from copy import copy, deepcopy
 from modsel.distributions import mvnorm, mvt, categorical
 from modsel.mc.gs_basis import ideal_covar
 from modsel.mc.optimization import find_step_size
+from modsel.mc import flags
 
 
-def sample(num_samples, initial_particles, proposal_method, population_size = 20):
+def sample(num_samples, initial_particles, proposal_method, population_size = 20, stop_flag = flags.NeverStopFlag()):
     rval = proposal_method.process_initial_samples(initial_particles)
     num_initial = len(rval)
     
-    while len(rval) - num_initial < num_samples:
+    while len(rval) - num_initial < num_samples and not stop_flag.stop():
         
         ancest_dist = categorical([1./len(rval)] * len(rval))
         
@@ -44,9 +45,11 @@ def sample(num_samples, initial_particles, proposal_method, population_size = 20
                 break
             except ValueError:
                 prop_w /= prop_w.sum()
-                
+        
+        
         for idx in range(len(draws)):
             rval.extend([pop[idx]] * draws[idx])
+        proposal_method.process_new_ancestors(rval[len(rval) - np.prod(draws):])
     
     return (np.array([s.sample for s in rval[num_initial:]]), np.array([s.lpost for s in rval[num_initial:]]))
 
@@ -100,6 +103,9 @@ class PmcProposalDistribution(object):
     
     def process_initial_samples(self, samples):
         raise NotImplementedError()
+    
+    def process_new_ancestors(self, ancestors):
+        raise NotImplementedError()
         
 
 class NaiveRandomWalkProposal(PmcProposalDistribution):
@@ -129,8 +135,9 @@ class GradientAscentProposal(PmcProposalDistribution):
         self.lpost_and_grad = lpost_and_grad_func
         self.lpost = lambda x:self.lpost_and_grad(x, False)
         self.lrate = lrate
-        self.far_jump_dist = mvt([0]*dim, np.eye(dim)*100, dim)
-        self.near_jump_dist = mvt([0]*dim, np.eye(dim)*3, dim)
+        self.far_jump_dist = mvt([0]*dim, np.eye(dim)*5, dim)
+        self.near_jump_dist = mvt([0]*dim, np.eye(dim)*2, dim)
+        self.back_off_count = 0
         
 
     
@@ -157,7 +164,8 @@ class GradientAscentProposal(PmcProposalDistribution):
         else:
             #we are at a distance to a local maximum
             #step in direction of gradient.
-            (f, theta_1, lpost_1, foo)  = find_step_size(ancestor.sample, ancestor.other["lrate"], ancestor.lpost, ancestor.other["gr"], func = self.lpost)
+            (f, theta_1, lpost_1, back_off_tmp)  = find_step_size(ancestor.sample, ancestor.other["lrate"], ancestor.lpost, ancestor.other["gr"], func = self.lpost)
+            self.back_off_count += back_off_tmp
             step_mean = f * 0.5 * ancestor.other["gr"]
             cov = ideal_covar(step_mean, main_var_scale = 1, other_var = 0.5) # , fix_main_var=1
             prop_dist = mvnorm(ancestor.sample + step_mean, cov)
@@ -170,7 +178,10 @@ class GradientAscentProposal(PmcProposalDistribution):
                            lweight = lp - prop_dist.logpdf(samp),
                            other = {"lrate":f, "gr":gr})
         return rval
-
+        
+        
+    def process_new_ancestors(self, ancestors):
+        pass
 
 
 class ConjugateGradientAscentProposal(PmcProposalDistribution):        
@@ -178,9 +189,10 @@ class ConjugateGradientAscentProposal(PmcProposalDistribution):
         self.lpost_and_grad = lpost_and_grad_func
         self.lpost = lambda x:self.lpost_and_grad(x, False)
         self.lrate = lrate
-        self.far_jump_dist = mvt([0]*dim, np.eye(dim)*100, dim)
-        self.near_jump_dist = mvt([0]*dim, np.eye(dim)*3, dim)
+        self.far_jump_dist = mvt([0]*dim, np.eye(dim)*5, dim)
+        self.near_jump_dist = mvt([0]*dim, np.eye(dim)*2, dim)
         self.compute_conj_dir = lambda anc, current: max(0, np.float(current.sample.T.dot(current.sample - anc.sample) / anc.sample.T.dot(anc.sample)))
+        self.back_off_count = 0
 
 
     def process_initial_samples(self, samples):
@@ -208,6 +220,7 @@ class ConjugateGradientAscentProposal(PmcProposalDistribution):
             #we are at a distance to a local maximum
             #step in direction of gradient.
             (f, theta_1, fval_1, back_off_tmp) = find_step_size(ancestor.sample, ancestor.other["lrate"], ancestor.lpost, ancestor.other["conj"], func = self.lpost)
+            self.back_off_count += back_off_tmp
             step_mean = f * 0.5 * ancestor.other["conj"]
             cov = ideal_covar(step_mean, main_var_scale = 1, other_var = 0.5) # , fix_main_var=1
             prop_dist = mvnorm(ancestor.sample + step_mean, cov)

@@ -16,9 +16,8 @@ from scipy.misc import logsumexp
 from .distributions import mvnorm, mvt, categorical
 
 
-class TMM(object):
-    def __init__(self, num_components, dim, samples = None):
-        self.num_components = num_components
+class NPGMM(object):
+    def __init__(self, dim, samples = None):
         self.dim = dim
         if samples is not None:
             self.fit(samples)
@@ -26,16 +25,16 @@ class TMM(object):
     
     def fit(self, samples):
         import sklearn.mixture
-        m = sklearn.mixture.GMM(self.num_components, "full")
+        m = sklearn.mixture.DPGMM(covariance_type="full")
         m.fit(samples)
+        self.num_components = len(m.weights_)
         self.comp_lprior = log(m.weights_)
         self.dist_cat = categorical(exp(self.comp_lprior))
-        self.comp_dist = [mvt(m.means_[i], m.covars_[i], 4) for i in range(self.comp_lprior.size)]
+        self.comp_dist = [mvnorm(m.means_[i], np.linalg.inv(m.precs_[i]), Ki = m.precs_[i]) for i in range(self.comp_lprior.size)]
         self.dim = m.means_[0].size
     
-    
     def ppf(self, component_cum_prob):
-        assert(component_cum_prob.shape[1] == self.dim + 2)
+        assert(component_cum_prob.shape[1] == self.dim + 1)
         rval = []
         for i in range(component_cum_prob.shape[0]):
             r = component_cum_prob[i,:]
@@ -50,7 +49,7 @@ class TMM(object):
         return rval
     
     def rvs(self, num_samples):
-        return self.ppf(stats.uniform.rvs(0, 1, (num_samples, self.dim + 2)))
+        return self.ppf(stats.uniform.rvs(0, 1, (num_samples, self.dim + 1)))
     
 
 class GMM(object):

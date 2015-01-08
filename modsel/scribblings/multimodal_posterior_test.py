@@ -33,7 +33,7 @@ matplotlib.rcParams['ytick.direction'] = 'out'
 delta = 0.025
 
 lim = 10
-X = np.arange(-4, 2, delta)
+X = np.arange(-10, 10, delta)
 (X,Y) = np.meshgrid(X, X)
 X = X
 Y = Y

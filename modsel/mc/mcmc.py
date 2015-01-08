@@ -10,20 +10,22 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 from numpy import exp, log
 from modsel.distributions import mvnorm
-from modsel.mc import slice_sampling
+from modsel.mc import slice_sampling, flags
 
 
-def sample(num_samples, initialization, markov_kernel):
+def sample(num_samples, initialization, markov_kernel, stop_flag = flags.NeverStopFlag()):
     s = []
     lp = []
     theta_old = np.copy(initialization)
     lpost_old = -np.inf
-    for i in range(num_samples):  
+    i = 0
+    while i < num_samples and (stop_flag is None or not stop_flag.stop()):  
         (theta_new, lpost_new) = markov_kernel.step(theta_old, lpost_old)
         s.append(theta_new)
         lp.append(lpost_new)
         (theta_old, lpost_old) = (theta_new, lpost_new)
         #print s[-1], theta_old
+        i += 1
     #assert()
     return (np.array(s), np.array(lp))
 

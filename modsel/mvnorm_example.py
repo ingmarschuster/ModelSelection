@@ -51,7 +51,7 @@ num_post_samples = 1000
 ## Number of (Quasi-)Importance samples and precomputed low discrepancy sequence ##
 num_imp_samples = 10000
 
-num_datasets = 50
+num_datasets = 20
 
 if False:
     dims = 1
@@ -94,6 +94,12 @@ for num_obs in datasets:
         est[num_obs][estim] = []
     for ds in datasets[num_obs]:
         D = ds["obs"]
+        ## Analytic evidence
+        ((mu_post, K_post, Ki_post),
+         evid) = analytic_postparam_logevidence_mvnorm_known_K_li(D, mu_pr, K_pr, K_li)
+        print(evid, mu_post, K_post)
+        #continue
+        est[num_obs]["GroundTruth"].append(evid)
         
         ## Sample from and fit gaussians to the posteriors ##
         samp = sample_params_known_K_li(num_post_samples, D,
@@ -104,11 +110,7 @@ for num_obs in datasets:
         #print(ds["params"], param_fit)
         fit = mvnorm(param_fit[0], param_fit[1])
         
-        ## Analytic evidence
-        ((mu_post, K_post, Ki_post),
-         evid) = analytic_postparam_logevidence_mvnorm_known_K_li(D, mu_pr, K_pr, K_li)
-        #print("Analytic",mu_post, K_post, "\nFit", param_fit,"\n")
-        est[num_obs]["GroundTruth"].append(evid)
+
         
         
         

@@ -56,7 +56,7 @@ def mm_dens_(x):
     mvn = stats.multivariate_normal(np.zeros(dims),5*np.eye(dims))
     return log(x[:,0])*2+mvn.logpdf(x)
 
-def mm_dens_(x):
+def mm_dens(x):
     # Some multimodal density
     x = np.atleast_2d(x)
     uvn = stats.norm(0,1)
