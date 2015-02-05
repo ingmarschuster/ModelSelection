@@ -9,7 +9,7 @@ from __future__ import division, print_function, absolute_import
 
 import numpy as np
 from numpy import exp, log
-from modsel.distributions import mvnorm
+from distributions import mvnorm
 from modsel.mc import slice_sampling, flags
 
 
@@ -19,7 +19,7 @@ def sample(num_samples, initialization, markov_kernel, stop_flag = flags.NeverSt
     theta_old = np.copy(initialization)
     lpost_old = -np.inf
     i = 0
-    while i < num_samples and (stop_flag is None or not stop_flag.stop()):  
+    while i < num_samples and not stop_flag.stop():  
         (theta_new, lpost_new) = markov_kernel.step(theta_old, lpost_old)
         s.append(theta_new)
         lp.append(lpost_new)

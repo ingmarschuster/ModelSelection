@@ -22,7 +22,7 @@ import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
 
 from modsel.mc import mcmc
-from modsel.mixture import TMM, GMM
+from modsel.mc import bijections
 
 
 
@@ -48,6 +48,15 @@ def mm_dens(x):
     uvn = stats.norm(0,1)
     mvn = stats.multivariate_normal(np.zeros(dims),5*np.eye(dims))
     rval = uvn.logcdf(np.sin(x.sum(1)))+ mvn.logpdf(x)
+    return log(norm_const)+rval
+
+def hole_dens(x):
+    norm_const = 1
+    # Some multimodal density
+    x = np.atleast_2d(x)
+    uvn = stats.beta(1,1)
+    mvn = stats.multivariate_normal(np.zeros(dims),5*np.eye(dims))
+    rval = uvn.logcdf(np.linalg.norm(x)**2)+ mvn.logpdf(x)
     return log(norm_const)+rval
 
 
@@ -78,14 +87,10 @@ def apply_to_mg(func, *mg):
 
 s = sample_params(1000)
 
-fit = TMM(2, 2, samples = s)
 
 plt.figure()
-CS = plt.contour(X,Y,exp(apply_to_mg(mm_dens, X,Y)))
-plt.close()
-
-plt.figure()
-CS = plt.contour(X,Y,exp(apply_to_mg(lambda x: fit.logpdf(x), X,Y)))
+CS = plt.contour(X,Y,exp(apply_to_mg(hole_dens, X,Y)))
+plt.show()
 plt.close()
 
 print(mm_dens([[-2.1,-2.1], [0.8,0.8], [0,0]]))

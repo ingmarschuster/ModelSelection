@@ -28,7 +28,9 @@ def simple_gaussian(dims = 1, observations_range = range(10,101,10), num_dataset
 def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4):
     def gen_lp_unnorm_ev(lev, distr_norm):
         print(distr_norm.mu, distr_norm.K)
-        return (lambda x:distr_norm.logpdf(x) + lev, lev)
+        rval = lambda x:distr_norm.logpdf(x) + lev
+        rval.log_evidence = lev
+        return (rval, lev)
         
     rval = []
     for ep in ev_params:
@@ -38,7 +40,10 @@ def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var
                 try:
                     m = stats.multivariate_normal.rvs([0] * dims, np.eye(dims)*1000)
                     K = invwishart_rv(np.eye(dims) * cov_var_const, dims + 1 )
-                    rval.append(gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K)))
+                    val = gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K))
+                    val.mean = m
+                    val.cov = K
+                    rval.append(val)
                     break
                 except np.linalg.LinAlgError:
                     import sys
@@ -52,7 +57,10 @@ def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var
 def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4):
     def gen_lp_unnorm_ev(lev, distr_norm):
         print(distr_norm.mu, distr_norm.K)
-        return (lambda x:distr_norm.logpdf(x) + lev, lev)
+        rval = lambda x:distr_norm.logpdf(x) + lev
+        rval.log_evidence = lev
+        return (rval, lev)
+        
         
     rval = []
     for ep in ev_params:
@@ -61,7 +69,11 @@ def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], co
             while True:
                 try:
                     m = stats.multivariate_normal.rvs([0] * dims, np.eye(dims)*1000)
-                    rval.append(gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, np.eye(dims) )))
+                    K = np.eye(dims)
+                    val = gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K))
+                    val.mean = m
+                    val.cov = K
+                    rval.append(val)
                     break
                 except np.linalg.LinAlgError:
                     import sys
@@ -76,7 +88,9 @@ def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], co
 
 def gen_mm_lpost(num_datasets,num_modes, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 1.5):
     def gen_lp_unnorm_ev(lev, mixt):
-        return (lambda x:mixt.logpdf(x) + lev, lev)
+        rval = lambda x:mixt.logpdf(x) + lev
+        rval.log_evidence = lev
+        return (rval, lev)
         
     rval = []
     for ep in ev_params:
@@ -131,7 +145,9 @@ def gen_mm_dens(dims, cov_var_const = None, log_norm_const = 0, peakyness = None
     
 def gen_mm_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4):
     def gen_lp_unnorm_ev(lev, mixt):
-        return (lambda x:mixt.logpdf(x) + lev, lev)
+        rval = lambda x:mixt.logpdf(x) + lev
+        rval.log_evidence = lev
+        return (rval, lev)
         
     rval = []
     for ep in ev_params:

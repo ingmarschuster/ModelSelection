@@ -25,19 +25,22 @@ import modsel.mc.flags as flags
 
 #from pmc_proposals import *
 
-
+np.random.seed(9)
 
 def mean_of_samples(samples, num_est_samp = None):
     if num_est_samp is None:
         return samples.mean(0)
-    return [samples[:N, :].mean(0) for N in num_est_samp]
+    else:
+        assert(np.min(num_est_samp) >= -np.inf and np.max(num_est_samp) <= 0)
+    num_s = len(samples)
+    return [samples[:int(exp(N + log(num_s))), :].mean(0) for N in num_est_samp]
 
 
 num_post_samp = 100
 
 num_obs = 100
 num_dims = 2 #30
-num_datasets = 10#50
+num_datasets = 50#50
 datasets = simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 40)
 nograd_sqerr = []
 grad_sqerr = []
@@ -53,13 +56,15 @@ ng_llc = (0,0)
 ss_llc = 0
 ds_c = 0
 est = {}
-num_est_samp = None #np.logspace(1, np.log10(num_post_samp), 15, base=10).astype(int)
+num_est_samp = -np.linspace(-100.,0.,15,) # None #-np.logspace(1, np.log10(num_post_samp), 15, base=10).astype(int)
 
 prior = mvnorm(np.array([0]*num_dims), np.eye(num_dims) * 50)
 
+ad = []
+
 for num_obs in datasets:
     est[num_obs] = {"GroundTruth":[]}
-    for estim in ["pmc","cgpmc","gpmc","slicesamp"]:
+    for estim in ["pmc","cgpmc","gpmc","slicesamp", "slice_half"]:
         est[num_obs][estim] = []
     for Data in datasets[num_obs]:        
         ds_c += 1
@@ -118,17 +123,20 @@ for num_obs in datasets:
         
         (s_gibbs_slice, t_gibbs_slice) = mcmc.sample(num_post_samp, theta, mcmc.ComponentWiseSliceSamplingKernel(lpost), stop_flag = stop_flag)#np.array(s_gibbs_slice)
         est[num_obs]["slicesamp"].append(mean_of_samples(s_gibbs_slice, num_est_samp))
+        est[num_obs]["slice_half"].append(mean_of_samples(s_gibbs_slice[len(s_gibbs_slice)//2:], num_est_samp))
         ss_llc += stop_flag.lhood
         stop_flag.max_both_from_current_counts()
         stop_flag.reset()
         
         
+        ad.append(pmc.AdGrAsProposal(lpost_and_grad, num_dims))
         (s_cgrad, t_cgrad) = pmc.sample(num_post_samp**2,
                               [prior.rvs() for _ in range(10)],
-                              pmc.ConjugateGradientAscentProposal(lpost_and_grad, num_dims),
+                              ad[-1],
                               population_size = 4, stop_flag = stop_flag)
         est[num_obs]["cgpmc"].append(mean_of_samples(s_cgrad, num_est_samp))
         cgrad_llc = (cgrad_llc[0] + stop_flag.lhood, cgrad_llc[1]+ int(stop_flag.grad))
+        
         stop_flag.reset()
         
         #ga_theta = gradient_ascent(prior.rvs(), lpost_and_grad)
@@ -143,9 +151,11 @@ for num_obs in datasets:
         ng_llc = (ng_llc[0] + int(stop_flag.lhood), ng_llc[1] + int(stop_flag.grad))
         stop_flag.reset()
         
+        
+        
         (s_grad, t_grad) = pmc.sample(num_post_samp**2,
                               [prior.rvs() for _ in range(10)],
-                              pmc.GradientAscentProposal(lpost_and_grad, num_dims),
+                              pmc.GrAsProposal(lpost_and_grad, num_dims),
                               population_size = 4, stop_flag = stop_flag)
         est[num_obs]["gpmc"].append(mean_of_samples(s_grad, num_est_samp))
         grad_llc = (grad_llc[0] + int(stop_flag.lhood), grad_llc[1]+ int(stop_flag.grad))
