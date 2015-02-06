@@ -10,6 +10,7 @@ from __future__ import division, print_function, absolute_import
 import numpy as np
 import scipy as sp
 import scipy.stats as stats
+import cPickle as pickle
 
 from numpy import exp, log, sqrt
 from scipy.misc import logsumexp
@@ -24,7 +25,7 @@ import functools
 def check_tails(post, post_mode, prop):
     for of in range(10000, 100000, 10000):
         for sign in (-1,1):
-            assert(post.logpdf(post_mode+sign*of) - prop.logpdf(post_mode+sign*of) <= 0)
+            assert(post(post_mode+sign*of) - prop(post_mode+sign*of) <= 0)
     
 
 def unique_rows(a):
@@ -78,8 +79,8 @@ def test_permutations():
 
 
 def log_imp_weight(samp, post, prop):
-    return (post.logpdf(samp)
-                 - prop.logpdf(samp) )
+    return (post(samp)
+                 - prop(samp) )
 
 def inflate(samp):
     return np.vstack(permutations(samp))
@@ -94,8 +95,10 @@ def perpl(samp, post, prop):
     weights = weights - logsumexp(weights) # normalize
     return -np.sum(exp(weights)*weights)
 
-def importance_weighting(samp, post, prop):
-    factor = np.atleast_2d(log_imp_weight(samp, post, prop)).T
+def importance_weighting(samp, post, prop, limp_w = None):
+    if limp_w is None:
+        limp_w = log_imp_weight(samp, post, prop)
+    factor = np.atleast_2d(limp_w).T
     #print(np.var(factor))
     estimates = samp * np.hstack([exp(factor)]*samp.shape[1])
     return estimates
@@ -104,13 +107,6 @@ def est_plain(samp, post, prop):
     return importance_weighting(samp, post, prop).mean(0)
     
 def est_bu(samp, post, prop):
-    var = []
-    #for s in permutations(samp):
-    #    isamp = importance_weighting(samp, post, prop) 
-    #    e = isamp.mean(0)
-    #    var.append((isamp-e).var(0))
-   # assert()
-    #print(np.var(var,0))   
     return est_plain(inflate(samp), post, prop)
 
 def est_bu_indiv_sets(samp, post, prop):
@@ -162,21 +158,35 @@ bu_indiv_sets_estimates =[]
 bu_rew_estimates = []
 
 if True:
-    (mu_true, K_true, offset) = (np.ones(2)*-10, np.eye(2)*2, 5)
+    M = 100
+    K = 2
+    log_evid = -1000
+    (mu_true, K_true, offset) = (np.ones(K)*-10, np.eye(K)*2, 5)
+    
+    post_param = (mu_true, K_true)
+    post = mvnorm(*post_param)
+    post_lpdf = lambda x: post.logpdf(x) + log_evid
 
-    post = mvnorm(mu_true, K_true)
-
-    prop = mvnorm(mu_true, K_true*1.5)
+    prop_param = (mu_true+offset, K_true, 20)
+    prop = mvt(*prop_param)
+    prop_lpdf = lambda x: prop.logpdf(x)
 
     #check_tails(post, mu_true, prop)
 
 
-
-    for x in [prop.rvs(100) for _ in range(20)]:
-        n_estimates.append(np.linalg.norm(est_plain(x, post, prop) - mu_true,2))
-        bu_estimates.append(np.linalg.norm(est_bu(x, post, prop) - mu_true,2))
-        bu_rew_estimates.append(np.linalg.norm(est_bu_indiv_sets_best_recomb(x, post, prop) - mu_true,2))
-        bu_indiv_sets_estimates.append(np.linalg.norm(est_bu_indiv_sets(x, post, prop) - mu_true,2,1).mean(0))
+    perm_x = []
+    perm_weights = []
+    for x in [prop.rvs(M) for _ in range(200)]:
+        #plain_weights = log_imp_weight(x)
+        perm_x.append(permutations(x))
+        perm_weights.append([log_imp_weight(p, post_lpdf, prop_lpdf) for p in perm_x[-1]])
+    with open("Gaussian_test_standard_imp_samp_20k_M100_K2_with_logevid_off_center.pickle", "w") as f:
+        obj = {"post":post_param, "prop":prop_param,
+               "perm_x":perm_x,
+               "log_importance_weights":perm_weights,
+               "M": M, "K":K,
+               "log_evid":log_evid }
+        pickle.dump(obj, f)
 else:
     
     for dim in range(2,3):
@@ -197,11 +207,7 @@ else:
     
 
     
-est_stats(np.array(n_estimates))
-est_stats(np.array(bu_estimates)) 
-est_stats(np.array(bu_indiv_sets_estimates)) 
-est_stats(np.array(bu_rew_estimates))
-
-
-#print(x.shape, est(x, post, prop, mu_true))
-#print(x_bu.shape, est(x_bu, post, prop, mu_true))
+#est_stats(np.array(n_estimates))
+#est_stats(np.array(bu_estimates)) 
+#est_stats(np.array(bu_indiv_sets_estimates)) 
+#est_stats(np.array(bu_rew_estimates))

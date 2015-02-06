@@ -218,7 +218,7 @@ def statistics(est):
             var = estimate.var(0).mean()
             var_rel = est_rel.var(0).mean()
             mse = ((estimate - analytic)**2).mean()
-            mse_rel = l((est_rel - 1)**2).mean()
+            mse_rel = ((est_rel - 1)**2).mean()
             
             res[num_samples]["bias^2"][estim] = bias2.flat[:]
             res[num_samples]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
@@ -228,8 +228,8 @@ def statistics(est):
             res[num_samples]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
             #print(logsubtrexp(logaddexp(bias2, var)[0], mse)[0],"\n",
             #      logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])
-            decomp_err = logmeanexp(logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])[0]
+            decomp_err = (bias2 + var - mse).mean()
           
-            if decomp_err >= -23: # error in original space >= 1e-10 
+            if decomp_err >= 0.01: # error in original space >= 1e-10 
                 print("large mse decomp error, on average", decomp_err)
     return res
