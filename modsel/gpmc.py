@@ -22,10 +22,11 @@ from modsel.synthdata import gen_gauss_lpost
 import modsel.mc.mcmc as mcmc
 import modsel.mc.pmc as pmc
 import modsel.mc.flags as flags
+import time
 
 #from pmc_proposals import *
 
-np.random.seed(9)
+#np.random.seed(9)
 
 def mean_of_samples(samples, num_est_samp = None):
     if num_est_samp is None:
@@ -36,12 +37,12 @@ def mean_of_samples(samples, num_est_samp = None):
     return [samples[:int(exp(N + log(num_s))), :].mean(0) for N in num_est_samp]
 
 
-num_post_samp = 100
+num_post_samp = 600
 
 num_obs = 1
 num_dims = 5 #30
 num_datasets = 50#50
-np.random.seed(1)
+#np.random.seed(1)
 posteriors = gen_gauss_lpost(num_datasets, num_dims, cov_var_const = 4, with_grad=True)
 #simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 4)
 nograd_sqerr = []
@@ -73,7 +74,7 @@ for num_obs in [1]:
     for lpost in posteriors:
         naive_proposals = pmc.CategoricalOracle(pmc.GaussRwProposal(None,np.eye(num_dims)*15))
 
-        grad_proposals = pmc.CategoricalOracle(pmc.GrAsStupidProposal(None,10, 15))
+        grad_proposals = pmc.CategoricalOracle(pmc.GrAsStupidProposal(None,15, 15))
 
         #naive_proposals = pmc.CategoricalOracle(pmc.NaiveRandomWalkProposal(None, mvnorm([0]*num_dims, np.eye(num_dims))))
 
@@ -82,7 +83,7 @@ for num_obs in [1]:
         
         print("Dataset",ds_c)        
         
-        stop_flag = flags.LikelihoodEvalsFlag()
+        stop_flag = flags.ProcessorTimeFlag()
         
         est[num_obs]["GroundTruth"].append(lpost.mean)
         
@@ -108,12 +109,13 @@ for num_obs in [1]:
         #print("Slice", ll_count, llg_count)
         
 
-        
+        stop_flag.reset()
         (s_gibbs_slice, t_gibbs_slice) = mcmc.sample(num_post_samp, theta, mcmc.ComponentWiseSliceSamplingKernel(lp), stop_flag = stop_flag)#np.array(s_gibbs_slice)
+        stop_flag.set_max_time()
+        print(stop_flag.elapsed())
         est[num_obs]["slicesamp"].append(mean_of_samples(s_gibbs_slice, num_est_samp))
         est[num_obs]["slice_half"].append(mean_of_samples(s_gibbs_slice[len(s_gibbs_slice)//2:], num_est_samp))
         ss_llc += stop_flag.lhood
-        stop_flag.max_both_from_current_counts()
         stop_flag.reset()
         
         
@@ -126,7 +128,7 @@ for num_obs in [1]:
                                 [prior.rvs() for _ in range(10)],
                                 naive_proposals,
                                 population_size = 4, stop_flag = stop_flag)
-    
+        print(stop_flag.elapsed())
         est[num_obs]["pmc"].append(mean_of_samples(s_nograd, num_est_samp))
         ng_llc = (ng_llc[0] + int(stop_flag.lhood), ng_llc[1] + int(stop_flag.grad))
         stop_flag.reset()
@@ -137,6 +139,7 @@ for num_obs in [1]:
                               [prior.rvs() for _ in range(10)],
                               grad_proposals,
                               population_size = 4, stop_flag = stop_flag)
+        print(stop_flag.elapsed())
         est[num_obs]["gpmc"].append(mean_of_samples(s_grad, num_est_samp))
         grad_llc = (grad_llc[0] + int(stop_flag.lhood), grad_llc[1]+ int(stop_flag.grad))
         stop_flag.reset()

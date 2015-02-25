@@ -313,14 +313,16 @@ class GaussRwProposal(PmcProposalDistribution):
     def __init__(self, lpost_and_grad_func, cov):
         self.lpost_and_grad = lpost_and_grad_func
         self.lpost = lambda x:self.lpost_and_grad(x, False)
-        self.cov = cov
+        self.step_dist = mvnorm([0]*cov.shape[0], cov)
         
     def gen_proposal(self, ancestor = None):
         return gen_sample_prototype(ancestor,
                                     self,
-                                    prop_dist = mvnorm(ancestor.sample, self.cov),
-                                    lpost_func = self.lpost)
-        
+                                    step_dist = self.step_dist,
+                                    lpost_func = self.lpost)[0]
+
+
+            
 
 
 class InvWishartRandomWalkProposal(PmcProposalDistribution):
