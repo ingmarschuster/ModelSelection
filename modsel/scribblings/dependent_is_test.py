@@ -161,7 +161,7 @@ if True:
     M = 100
     K = 2
     log_evid = -1000
-    (mu_true, K_true, offset) = (np.ones(K)*-10, np.eye(K)*2, 5)
+    (mu_true, K_true, offset) = (np.ones(K), np.eye(K)*2, 5)
     
     post_param = (mu_true, K_true)
     post = mvnorm(*post_param)
@@ -180,7 +180,7 @@ if True:
         #plain_weights = log_imp_weight(x)
         perm_x.append(permutations(x))
         perm_weights.append([log_imp_weight(p, post_lpdf, prop_lpdf) for p in perm_x[-1]])
-    with open("Gaussian_test_standard_imp_samp_20k_M100_K2_with_logevid_off_center.pickle", "w") as f:
+    with open("Gaussian_test_standard_imp_samp_200_M100_with_logevid_off_center_"+str(offset)+".pickle", "w") as f:
         obj = {"post":post_param, "prop":prop_param,
                "perm_x":perm_x,
                "log_importance_weights":perm_weights,

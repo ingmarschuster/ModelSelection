@@ -14,7 +14,7 @@ from numpy import log, exp
 from scipy.misc import logsumexp
 from distributions import mvnorm, invwishart
 from modsel.mc import mcmc, pmc
-from modsel.mc.optimization import conjugate_gradient_ascent, gradient_ascent
+from modsel.mc.optimization import conjugate_gradient_ascent, gradient_ascent, find_step_size
 
 
 from modsel.sobol import sobol_seq
@@ -22,7 +22,7 @@ from modsel.sobol import sobol_seq
 
 def test_MCMC_PMC(include_mcmc = True, include_pmc = True):
     np.random.seed(2)
-    for dim in [3, 4]:
+    for dim in [4, 3]:
         theta = stats.multivariate_normal.rvs(np.array([0]*dim), np.eye(dim)*10)
         def lpost_and_grad(x, grad = True):
             diff = (theta-x)
@@ -46,10 +46,10 @@ def test_MCMC_PMC(include_mcmc = True, include_pmc = True):
                     assert(False)
         if include_pmc:
             ###### PMC ######
-            for (prop, num_samp) in [(pmc.NaiveRandomWalkProposal(lpost, mvnorm([0]*dim, np.eye(dim)*5)), 1000),
-                                     (pmc.GrAsProposal(lpost_and_grad, dim, lrate = 0.1), 100),
-                                     (pmc.ConGrAsProposal(lpost_and_grad, dim, lrate = 0.1), 100)]:
-                for sample in [pmc.sample_sis]:#pmc.sample,
+            for (prop, num_samp) in [(pmc.GrAsProposal(lpost_and_grad, dim, lrate = 0.1), 100),#(pmc.ConGrAsProposal(lpost_and_grad, dim, lrate = 0.1), 100)
+                                     (pmc.NaiveRandomWalkProposal(lpost, mvnorm([0]*dim, np.eye(dim)*5)), 1000),
+                                     ]:
+                for sample in [pmc.sample]:#pmc.sample,
                     (samp, trace) = sample(num_samp, [-theta]*10, prop) #sample_lpost_based
                     samp_m = samp.mean(0)#samp.mean(0)
                     print(prop, np.mean((samp_m - theta)**2))
@@ -121,6 +121,63 @@ def test_optimization_gradient_ascent():
     assert(mse_ga < 10**-5)
     assert(mse_cga < 10**-5)
 
+def test_find_step_size():
+    for dim in (2,3):
+        mu = 5*np.ones(dim)
+        cur_val = -mu
+        
+        dist = mvnorm(mu,np.eye(dim))
+        lpost = dist.logpdf(cur_val)
+        (f, theta_1, lpost_1, grad_1, back_off_tmp) = find_step_size(cur_val,
+                                                                     0.1,
+                                                                     lpost,
+                                                                     dist.logpdf_grad(cur_val),
+                                                                     func_and_grad = lambda x:dist.log_pdf_and_grad(x),
+                                                                     func = lambda x:dist.log_pdf_and_grad(x, grad=False))
+        assert(lpost_1 > lpost)
+        assert(grad_1.size == cur_val.size and grad_1.size == theta_1.size)
+
+def test_gen_sample_prototype():
+
+    
+    dim = 2
+    
+    anc = lambda: 0
+    anc.sample = np.ones(dim)
+    
+    prop_obj = object()
+    
+    class idiot_distr(object):
+        def rvs(self, *foo):
+            return -np.ones(dim)
+            
+        def logpdf(self, x):
+            if np.all(x == -1):
+                return 0
+            else:
+                return -np.inf
+    
+
+    lpost_func = lambda x: -2
+    lpost_and_grad_func = lambda x: (-2, np.ones(dim))
+    
+    sample = pmc.gen_sample_prototype(anc,prop_obj, prop_dist = idiot_distr(), lpost_func = lpost_func)
+    assert(np.all(sample.sample == -1) and
+           sample.ancestor == anc and
+           sample.lprop == 0 and
+           sample.lpost == -2 and
+           sample.lweight == -2 and
+           "gr" not in sample.other and
+           sample.prop_obj == prop_obj)   
+    
+    (sample, step) = pmc.gen_sample_prototype(anc,prop_obj, step_dist = idiot_distr(), lpost_and_grad_func = lpost_and_grad_func)
+    assert(np.all(step == -1) and
+           np.all(sample.sample == 0) and
+           sample.lprop == 0 and
+           sample.lpost == -2 and
+           sample.lweight == -2 and
+           "gr" in sample.other) 
+
 def test_optimization_rosenbrock():
     def neg_rosen_and_grad(theta, grad = True):
         fval = -sp.optimize.rosen(theta)
@@ -161,14 +218,14 @@ def test_LatentClassProposal():
 
 
 
-def test_WishartRandomWalkProposal():
+def test_InvWishartRandomWalkProposal():
     dim = 4
     iw = invwishart(np.eye(dim)*5, dim+1)
     for dim in [4]:
         df = stats.poisson.rvs(2)
         iw = invwishart(np.eye(dim)*5, dim+1)
         for K in [iw.rv() for _ in range(3)]:
-            pdist = pmc.WishartRandomWalkProposal(dim + 1 + df, dim)
+            pdist = pmc.InvWishartRandomWalkProposal(dim + 1 + df, dim)
             props = np.array([pdist.gen_proposal(mean=K).sample
                                  for _ in range(3000)])
             mse = ((K-props.mean(0))**2).mean()

@@ -16,21 +16,27 @@ import scipy as sp
 
 def find_step_size(theta, f, lpost, search_direc, func_and_grad = None, func = None):
     assert(func_and_grad is not None or func is not None)
-    lpost_1 = -np.inf  
-    back_off = 0
-    while lpost_1 < lpost:
-        theta_1 = theta + f * search_direc
+    lpost_1 = -np.inf
+    grad_1 = None
+    assert(theta is not None and f is not None and lpost is not None and search_direc is not None)
+    back_off = []
+    theta_1 = theta + f * search_direc
+    while lpost_1 <= lpost:
         if func_and_grad is not None:
             (lpost_1, grad_1) = func_and_grad(theta_1)
         else:
             lpost_1 = func(theta_1)
         if lpost > lpost_1:
             f = f * 0.5
-            back_off +=1
+            if func_and_grad is not None:
+                back_off.append((f, theta_1, lpost_1, grad_1))
+            else:
+                back_off.append((f, theta_1, lpost_1))
         else:
-            f = f* 1.05
-            
-            break
+            f = f* 1.05            
+            break        
+        theta_1 = theta + f * search_direc
+    assert(not np.isinf(lpost_1)) 
     if func_and_grad is not None:
         return (f, theta_1, lpost_1, grad_1, back_off)
     else:

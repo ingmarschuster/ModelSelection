@@ -28,14 +28,39 @@ import modsel.mc.bijections as bij
 __all__ = ["sample", "sample_lpost_based",
            "PmcSample", "PmcProposalDistribution",
            "NaiveRandomWalkProposal", "LatentClassProposal", 
-           "WishartRandomWalkProposal",
+           "InvWishartRandomWalkProposal",
            "GrAsProposal", "ConGrAsProposal"]
 
-def sample(num_samples, initial_particles, proposal_method, population_size = 20, stop_flag = flags.NeverStopFlag(), quiet = True):
-    rval = proposal_method.process_initial_samples(initial_particles)
-    num_initial = len(rval)
+def gr_ass(samps):
+    for s in samps:
+        if "gr" in s.other:
+            assert(s.other["gr"].size == s.sample.size)
+            
+            
+def importance_resampling(resampled_size, pop):
+    prop_w = np.array([s.lweight for s in pop])
+    prop_w = exp(prop_w - logsumexp(prop_w))
+    # Importance Resampling
+    while True:
+        try:
+            dist = categorical(prop_w)
+            break
+        except ValueError:
+            prop_w /= prop_w.sum()
+    
+    new_samp = []
+    for idx in range(resampled_size):
+        new_samp.append(pop[dist.rvs()])
+    return new_samp
+    
+    
+
+def sample(num_samples, initial_guesses, proposal_method, population_size = 20, stop_flag = flags.NeverStopFlag(), quiet = True):
+    num_initial = len(initial_guesses)
+    rval =  [PmcSample(sample=s) for s in initial_guesses]
     
     while len(rval) - num_initial < num_samples and not stop_flag.stop():
+
         #print(len(rval))
         anc_cand = np.min((len(rval), 2 * population_size))
         
@@ -44,30 +69,14 @@ def sample(num_samples, initial_particles, proposal_method, population_size = 20
         #choose ancestor uniformly at random from previous samples
         pop = []
         for _ in range(population_size):
-            tmp = proposal_method.gen_proposal(rval[-ancest_dist.rvs()])
-            if hasattr(tmp, "__iter__"):
-                pop.extend(tmp)
-            else:
-                pop.append(tmp)
-                
+            #assert(len(idx) ==1 and  idx.)
+            tmp = proposal_method.gen_proposal(rval[-int(ancest_dist.rvs())])
+            if not hasattr(tmp, "__iter__"):
+                tmp = [tmp]
+            pop.extend(tmp)
 
-        prop_w = np.array([s.lweight for s in pop])
-        prop_w = exp(prop_w - logsumexp(prop_w))
-        
-        
-        # Importance Resampling
-        while True:
-            try:
-                draws = np.random.multinomial(population_size, prop_w)
-                break
-            except ValueError:
-                prop_w /= prop_w.sum()
-        
-        new_samp = []
-        for idx in range(len(draws)):
-            new_samp.extend([pop[idx]] * draws[idx])
-        proposal_method.process_new_ancestors(new_samp)
-        rval.extend(new_samp)
+        proposal_method.observe(pop) # adapt proposal
+        rval.extend(importance_resampling(population_size, pop))
         if not quiet:
             print(len(rval), "samples", file=sys.stderr)
         
@@ -77,6 +86,7 @@ def sample(num_samples, initial_particles, proposal_method, population_size = 20
         #      "gr_covar_mdl", proposal_method.gr_covar_mdl.rv())
     except:
         pass
+    #assert()
     return (np.array([s.sample for s in rval[num_initial:]]), np.array([s.lpost for s in rval[num_initial:]]))
 
 
@@ -162,39 +172,35 @@ def sample_lpost_based(num_samples, initial_particles, proposal_method, populati
 
 
 class PmcSample(object):    
-    def __init__(self, ancestor = None, sample = None, lpost = None, lweight = None, other = {}, lprop = None):
+    def __init__(self, ancestor = None, sample = None, lpost = None, lweight = None, other = None, lprop = None, prop_obj = None):
         self.sample = sample
         self.lpost = lpost
         self.lprop = lprop
         self.ancestor = ancestor
         self.lweight = lweight
-        self.other = other
+        self.prop_obj = prop_obj
+        if other is None: #when directly having the default for other be {}, some strange behaviour was the result
+            self.other = {}
+        else:
+            self.other = other
         
 
 class PmcProposalDistribution(object):
-    
     def gen_proposal(self, ancestor = None):
         raise NotImplementedError()
     
-    def process_initial_samples(self, samples):
-        raise NotImplementedError()
-    
-    def process_new_ancestors(self, ancestors):
-        raise NotImplementedError()
+    def observe(self, population):
+        pass
         
 
 class NaiveRandomWalkProposal(PmcProposalDistribution):
     def __init__(self, lpost_func, proposal_dist):
         self.lpost = lpost_func
-        self.pdist = proposal_dist
-
-
-    def process_initial_samples(self, samples):
-        return [PmcSample(sample = s, lpost = self.lpost(s)) for s in samples]    
+        self.pdist = proposal_dist   
         
         
     def gen_proposal(self, ancestor = None, mean = None):
-        rval = PmcSample(ancestor)        
+        rval = PmcSample(ancestor, prop_obj = self)        
         if mean is None and ancestor is not None:
             if ancestor.sample is not None:
                 mean = ancestor.sample
@@ -208,9 +214,6 @@ class NaiveRandomWalkProposal(PmcProposalDistribution):
         if rval.lpost is not None:
             rval.lweight = rval.lpost - rval.lprop
         return rval
-    
-    def process_new_ancestors(self, ancestors):
-        pass
 
 
 class InvWishartRandomWalkProposal(PmcProposalDistribution):
@@ -218,11 +221,7 @@ class InvWishartRandomWalkProposal(PmcProposalDistribution):
         assert(df > dim + 1)
         self.df = df
         self.dim = dim
-        self.lpost = lpost_func
-
-
-    def process_initial_samples(self, samples):
-        return [PmcSample(sample = s, lpost = self.lpost(s)) for s in samples]    
+        self.lpost = lpost_func 
         
         
     def gen_proposal(self, ancestor = None, mean = None):
@@ -231,7 +230,7 @@ class InvWishartRandomWalkProposal(PmcProposalDistribution):
                (ancestor is not None and
                ancestor.sample is not None and
                np.prod(ancestor.sample.shape) == self.dim**2))
-        rval = PmcSample(ancestor)        
+        rval = PmcSample(ancestor, prop_obj = self)        
         if mean is None and ancestor is not None:
             if ancestor.sample is not None:
                 mean = ancestor.sample
@@ -248,9 +247,6 @@ class InvWishartRandomWalkProposal(PmcProposalDistribution):
             rval.lweight = None
             
         return rval
-    
-    def process_new_ancestors(self, ancestors):
-        pass  
 
 
 class LatentClassProposal(PmcProposalDistribution):
@@ -260,15 +256,11 @@ class LatentClassProposal(PmcProposalDistribution):
     
     def __init__(self, lpost_func, dim):
         self.lpost = lpost_func
-        self.dim = dim
-
-
-    def process_initial_samples(self, samples):
-        return [PmcSample(sample = s, lpost = self.lpost(s)) for s in samples]    
+        self.dim = dim  
         
         
     def gen_proposal(self, ancestor = None):
-        rval = PmcSample(ancestor)
+        rval = PmcSample(ancestor, prop_obj = self)
         rval.sample = np.zeros(self.dim)
         lpost_vals = []
         for i in range(rval.sample.size):
@@ -284,14 +276,11 @@ class LatentClassProposal(PmcProposalDistribution):
         rval.lprop = lpost_norm[chosen]
         rval.lweight = rval.lpost - rval.lprop
         return rval
-    
-    def process_new_ancestors(self, ancestors):
-        pass
 
         
    
 class GrAsProposal(PmcProposalDistribution):        
-    def __init__(self, lpost_and_grad_func, dim, lrate = 0.1, prop_mean_on_line = 0.5, main_var_scale = 1, other_var = 0.5):
+    def __init__(self, lpost_and_grad_func, dim, lrate = 0.1, prop_mean_on_line = 0.5, main_var_scale = 1, other_var = 0.5, fix_main_var = None):
         self.lpost_and_grad = lpost_and_grad_func
         self.lpost = lambda x:self.lpost_and_grad(x, False)
         self.lrate = lrate
@@ -300,43 +289,57 @@ class GrAsProposal(PmcProposalDistribution):
         self.prop_mean_on_line = prop_mean_on_line
         self.main_var_scale = main_var_scale
         self.other_var = other_var
-
-    
-    def process_initial_samples(self, samples):
-        s_lp_gr = [(s, self.lpost_and_grad(s)) for s in samples]
-        return [PmcSample(sample = s, lpost = lp, other = {"gr":gr, "lrate":self.lrate})
-                   for (s, (lp, gr)) in s_lp_gr]
+        self.fix_main_var = fix_main_var
         
     def gen_proposal(self, ancestor = None):
         assert(ancestor is not None)
+        rval = []
+        old = True
+        if "gr" not in ancestor.other:
+            old = False
+            ancestor.other["old"] = False
+            ancestor.other["gr"] = self.lpost_and_grad(ancestor.sample)[1]
+            assert(ancestor.other["gr"].size == ancestor.sample.size)
+        if "lrate" in ancestor.other:
+            f = ancestor.other["lrate"]
+        else:
+            f = self.lrate
         if np.linalg.norm(ancestor.other["gr"]) < 10**-10:
             #we are close to a local maximum
-            print("jump")
-            f = ancestor.other["lrate"]
+            print("jumping")
             prop_dist = self.jump_dist
         else:
             #we are at a distance to a local maximum
             #step in direction of gradient.
-            (f, theta_1, lpost_1, back_off_tmp)  = find_step_size(ancestor.sample, ancestor.other["lrate"], ancestor.lpost, ancestor.other["gr"], func = self.lpost)
-            self.back_off_count += back_off_tmp
+            assert(ancestor.other["gr"].size == ancestor.sample.size)
+            (f, theta_1, lpost_1, grad_1, back_off_tmp)  = find_step_size(ancestor.sample, f, ancestor.lpost, ancestor.other["gr"], func_and_grad = self.lpost_and_grad)
+            self.back_off_count += len(back_off_tmp)
+            if False and ancestor.lprop is not None:
+                for (f, samp, lp, gr) in back_off_tmp:
+                    rval.append(PmcSample(ancestor = ancestor,
+                           sample = samp,
+                           lpost = lp,
+                           lprop = ancestor.lprop,
+                           lweight = lp - ancestor.lprop,
+                           prop_obj = ancestor.prop_obj,
+                           other = {"lrate":f, "gr":gr, "old":True}))
             step_mean = f * self.prop_mean_on_line * ancestor.other["gr"]
-            cov = ideal_covar(step_mean, main_var_scale = self.main_var_scale, other_var = self.other_var) # , fix_main_var=1
+            cov = ideal_covar(step_mean, main_var_scale = self.main_var_scale, other_var = self.other_var, fix_main_var = self.fix_main_var) # , fix_main_var=1
             prop_dist = mvnorm(step_mean, cov)
         step = prop_dist.rvs()
         samp = ancestor.sample + step
         (lp, gr) = self.lpost_and_grad(samp)
         lprop =  prop_dist.logpdf(step)
-        rval = PmcSample(ancestor = ancestor,
+        assert(ancestor.other["gr"].size == ancestor.sample.size)
+        assert(gr.size == samp.size)
+        rval.append(PmcSample(ancestor = ancestor,
                            sample = samp,
                            lpost = lp,
                            lprop = lprop,
                            lweight = lp - lprop,
-                           other = {"lrate":f, "gr":gr})
-        return rval
-        
-        
-    def process_new_ancestors(self, ancestors):
-        pass     
+                           prop_obj = self,
+                           other = {"lrate":f, "gr":gr, "old":True}))
+        return rval  
 
 
 
@@ -357,6 +360,8 @@ class ConGrAsProposal(PmcProposalDistribution):
 
         
     def gen_proposal(self, ancestor = None):
+        assert()
+        #this needs to be updated
         assert(ancestor is not None)
         if np.linalg.norm(ancestor.other["gr"]) < 10**-10:
             #we are close to a local maximum
@@ -380,12 +385,10 @@ class ConGrAsProposal(PmcProposalDistribution):
         rval = PmcSample(ancestor = ancestor,
                            sample = samp,
                            lpost = lp,
-                           lprop = lprop,
+                           lprop = lprop, 
+                           prop_obj = self,
                            lweight = lp - prop_dist.logpdf(step),
                            other = {"lrate":f, "gr":gr, "conj":conj_dir_1})
                            
         return rval
-        
-    def process_new_ancestors(self, ancestors):
-        pass   
 

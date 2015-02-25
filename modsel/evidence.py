@@ -101,5 +101,5 @@ def importance_weights(true_measure, proposal_dist, imp_samp):
 
 def evidence_from_importance_weights(weights, num_weights_range = None):
     if num_weights_range is None:
-        logsumexp(weights)-log(len(weights))
+        return logsumexp(weights)-log(len(weights))
     return [logsumexp(weights[:N]) - log(N) for N in num_weights_range]

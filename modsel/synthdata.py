@@ -10,7 +10,7 @@ from numpy import exp, log, sqrt
 from scipy.misc import logsumexp
 import numpy as np
 import scipy.stats as stats
-from modsel.distributions import norm_invwishart, invwishart_rv, mvnorm
+from distributions import norm_invwishart, invwishart_rv, mvnorm
 from modsel.mixture import GMM
 
 def simple_gaussian(dims = 1, observations_range = range(10,101,10), num_datasets = 10, cov_var_const = 4):
@@ -25,12 +25,14 @@ def simple_gaussian(dims = 1, observations_range = range(10,101,10), num_dataset
     return ds
 
 
-def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4):
-    def gen_lp_unnorm_ev(lev, distr_norm):
-        print(distr_norm.mu, distr_norm.K)
+def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4, with_grad = False):
+    def gen_lp_unnorm_ev(lev, distr_norm, with_grad = False):
+      #  print(distr_norm.mu, distr_norm.K)
         rval = lambda x:distr_norm.logpdf(x) + lev
         rval.log_evidence = lev
-        return (rval, lev)
+        if with_grad:
+            rval.lpdf_and_grad = lambda x, pdf, grad: distr_norm.log_pdf_and_grad(x, pdf, grad)
+        return rval
         
     rval = []
     for ep in ev_params:
@@ -40,7 +42,7 @@ def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var
                 try:
                     m = stats.multivariate_normal.rvs([0] * dims, np.eye(dims)*1000)
                     K = invwishart_rv(np.eye(dims) * cov_var_const, dims + 1 )
-                    val = gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K))
+                    val = gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K), with_grad = with_grad)
                     val.mean = m
                     val.cov = K
                     rval.append(val)
@@ -54,12 +56,15 @@ def gen_gauss_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var
     return rval
 
 
-def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4):
-    def gen_lp_unnorm_ev(lev, distr_norm):
-        print(distr_norm.mu, distr_norm.K)
+
+def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 4, with_grad = False):
+    def gen_lp_unnorm_ev(lev, distr_norm, with_grad = False):
+       # print(distr_norm.mu, distr_norm.K)
         rval = lambda x:distr_norm.logpdf(x) + lev
         rval.log_evidence = lev
-        return (rval, lev)
+        if with_grad:
+            rval.lpdf_and_grad = lambda x, pdf, grad: distr_norm.log_pdf_and_grad(x, pdf, grad)
+        return rval
         
         
     rval = []
@@ -70,7 +75,7 @@ def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], co
                 try:
                     m = stats.multivariate_normal.rvs([0] * dims, np.eye(dims)*1000)
                     K = np.eye(dims)
-                    val = gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K))
+                    val = gen_lp_unnorm_ev(-lev_distr.rvs(), mvnorm(m, K), with_grad = with_grad)
                     val.mean = m
                     val.cov = K
                     rval.append(val)
@@ -86,7 +91,7 @@ def gen_gauss_diag_lpost(num_datasets, dims, ev_params = [(80, 10), (40,10)], co
 
 ## Multimodal density, see Lemma 3 of Azzalini 2005, "The Skew-normal Distribution and Related Multivariate Families" ##
 
-def gen_mm_lpost(num_datasets,num_modes, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 1.5):
+def gen_mm_lpost(num_datasets,num_modes, dims, ev_params = [(80, 10), (40,10)], cov_var_const = 1.5, ):
     def gen_lp_unnorm_ev(lev, mixt):
         rval = lambda x:mixt.logpdf(x) + lev
         rval.log_evidence = lev

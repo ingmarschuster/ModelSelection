@@ -155,10 +155,10 @@ def logstatistics(est):
     res = {}
     for num_samples in est:  
         res[num_samples] = {"bias^2":{},
-                         "var": {},
+                         "variance": {},
                          "mse":{},
                          "bias^2{ }(relat)":{}, 
-                         "var{ }(relat)": {}, 
+                         "variance{ }(relat)": {}, 
                          "mse{ }(relat)":{}
                          }
         # now calculate bias, variance and mse of estimators when compared
@@ -180,8 +180,8 @@ def logstatistics(est):
             
             res[num_samples]["bias^2"][estim] = bias2.flat[:]
             res[num_samples]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
-            res[num_samples]["var"][estim] =  var.flat[:]
-            res[num_samples]["var{ }(relat)"][estim] =  var_rel.flat[:]
+            res[num_samples]["variance"][estim] =  var.flat[:]
+            res[num_samples]["variance{ }(relat)"][estim] =  var_rel.flat[:]
             res[num_samples]["mse"][estim] =  mse.flat[:]
             res[num_samples]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
             #print(logsubtrexp(logaddexp(bias2, var)[0], mse)[0],"\n",
@@ -193,15 +193,21 @@ def logstatistics(est):
     return res
 
 
-def statistics(est):
+def statistics(est, take_logarithm = True):
     res = {}
+    if take_logarithm:
+        transform = np.log
+        prestr = "log "
+    else:
+        transform = lambda x: x
+        prestr = ""
     for num_samples in est:  
-        res[num_samples] = {"bias^2":{},
-                         "var": {},
-                         "mse":{},
-                         "bias^2{ }(relat)":{}, 
-                         "var{ }(relat)": {}, 
-                         "mse{ }(relat)":{}
+        res[num_samples] = {prestr+"bias^2":{},
+                         prestr+"variance": {},
+                         prestr+"mse":{},
+                         prestr+"bias^2{ }(relat)":{}, 
+                         prestr+"variance{ }(relat)": {}, 
+                         prestr+"mse{ }(relat)":{}
                          }
         # now calculate bias, variance and mse of estimators when compared
         # to analytic evidence
@@ -220,12 +226,12 @@ def statistics(est):
             mse = ((estimate - analytic)**2).mean()
             mse_rel = ((est_rel - 1)**2).mean()
             
-            res[num_samples]["bias^2"][estim] = bias2.flat[:]
-            res[num_samples]["bias^2{ }(relat)"][estim] = bias2_rel.flat[:]
-            res[num_samples]["var"][estim] =  var.flat[:]
-            res[num_samples]["var{ }(relat)"][estim] =  var_rel.flat[:]
-            res[num_samples]["mse"][estim] =  mse.flat[:]
-            res[num_samples]["mse{ }(relat)"][estim] =  mse_rel.flat[:]
+            res[num_samples][prestr+"bias^2"][estim] = transform(bias2.flat[:])
+            res[num_samples][prestr+"bias^2{ }(relat)"][estim] = transform(bias2_rel.flat[:])
+            res[num_samples][prestr+"variance"][estim] =  transform(var.flat[:])
+            res[num_samples][prestr+"variance{ }(relat)"][estim] =  transform(var_rel.flat[:])
+            res[num_samples][prestr+"mse"][estim] =  transform(mse.flat[:])
+            res[num_samples][prestr+"mse{ }(relat)"][estim] =  transform(mse_rel.flat[:])
             #print(logsubtrexp(logaddexp(bias2, var)[0], mse)[0],"\n",
             #      logsubtrexp(logsumexp(np.vstack((bias2, var)), 0), mse)[0])
             decomp_err = (bias2 + var - mse).mean()

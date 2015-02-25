@@ -13,7 +13,7 @@ from numpy import log, exp
 from scipy.misc import logsumexp
 
 
-from .distributions import mvnorm, mvt, categorical
+from distributions import mvnorm, mvt, categorical
 
 
 class NPGMM(object):

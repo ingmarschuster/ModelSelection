@@ -45,7 +45,7 @@ def plot_var_bias_mse(res, num_evid_samp, title, num_post_samples, num_imp_sampl
             else:
                 prestr = ""
             x = num_evid_samp
-            y = some_val[m][e]
+            y = some_val[m][e] #np.array([res[i][m][e] for i in x]).flatten()
             a.plot(x, y, label=e)
         a.set_title("$"+m+"$")
         a.set_xlabel(prestr + "# imp samp")

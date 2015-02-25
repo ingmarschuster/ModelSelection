@@ -15,6 +15,18 @@ def gs(X, row_vecs=True, norm = True):
     else:
         return Y.T
 
+def scalar_projection(from_vec, onto_vec):
+    # scalar_projection( np.ones(2),np.array((0,1)))
+
+    assert(from_vec.size == onto_vec.size)
+    return from_vec.flatten().dot(onto_vec.flatten())/np.linalg.norm(onto_vec)
+
+def test_scalar_projection():
+    assert(scalar_projection( np.ones(2),np.array((0,1))) == 1)
+    assert(scalar_projection( np.ones(2)*2,np.array((0,1))) == 2)
+    assert(np.array(scalar_projection( np.ones(2)*2,np.array((0,1)))).size == 1)
+
+
 
 def ideal_covar(direction, main_var_scale = 1, other_var = 0.5, fix_main_var=None):
     direction = direction.flat[:]

@@ -72,61 +72,6 @@ def test_DirCatTMM():
         dctmm.update_comp_dists([(-mu, K, df)] * dim)
         assert(ch_cat_param > dctmm.lprior())
 
-
-def cat_param_average_loss(truth, samples):
-    truth = sorted(truth)
-    return np.average([stats.entropy(truth, sorted(s.cat_param.flatten())) for s in samples])
-
-def mixture_means_over_time(samples):
-    return np.array([[float(s.comp_param[j][0])  for j in range(len(s.comp_param))] for s in samples])
- 
-
-def plot_mixture_means_over_time(res, outfname = "plot.pdf", asymptotes = [], steps=100):
-    infl = mixture_means_over_time(res["infl"][0])
-    std = mixture_means_over_time(res["standard"][0])
-    i_idx = np.round(np.linspace(1,infl.shape[0]-1, num=steps)).astype(int)
-    s_idx = np.round(np.linspace(1,std.shape[0]-1, num=steps)).astype(int)
-    fig, axes = plt.subplots(ncols=3, nrows = 1, figsize=(9,3))
-    i_n = []
-    i_v = []
-    i_l = []
-    s_n = []
-    s_v = []
-    s_l = []
-    for i in range(len(i_idx)):
-        i_n.append(np.average(infl[:i_idx[i]], axis = 0))
-        i_v.append(np.var(infl[:i_idx[i]], axis = 0))
-        i_l.append(es.logmeanexp(res["infl"][1][:i_idx[i]])[0])
-        s_n.append(np.average(std[:s_idx[i]], axis = 0))
-        s_v.append(np.var(std[:s_idx[i]], axis = 0))
-        s_l.append(es.logmeanexp(res["standard"][1][:s_idx[i]])[0])
-    i_n = np.array(i_n)
-    i_v = np.array(i_v)
-    i_l = np.array(i_l)
-    s_n = np.array(s_n)
-    s_v = np.array(s_v)
-    s_l = np.array(s_l)
-    for a in axes:
-        a.set_title("")
-        a.set_xlabel("log # lhood evals")
-        a.autoscale("both")
-        a.set_aspect("auto", adjustable="datalim")
-    
-    if len(asymptotes) > 0:
-        axes[0].set_ylim(min(i_n.min(),s_n.min(),min(asymptotes))-2, max(i_n.min(),s_n.min(),max(asymptotes))+2)
-    axes[0].set_ylabel("estim. component means")
-    axes[0].plot(s_idx, s_n, "--", s_idx, i_n)
-    for l in asymptotes:
-        axes[0].axhline(y = l, color="black", ls="dotted")
-    axes[1].set_ylabel("variance of estimate")
-    axes[1].plot(s_idx, s_v, "--", s_idx, i_v)
-    axes[2].set_ylabel("avg. log likelihood")
-    axes[2].plot(s_idx, s_l, "--", s_idx, i_l)
-   # assert()
-    fig.tight_layout()
-    fig.savefig(outfname, bbox_inches='tight')
-    plt.close(fig)
-    return (s_idx, i_n, s_n)
     
 
 def test_DirCatTMMProposal():
@@ -157,7 +102,7 @@ def test_DirCatTMMProposal():
     
     initial_samples = []
     for _ in range(10):
-        initial_samples.append(dis.DirCatTMM(obs, [1]*n_comp, dist.mvt([0]*dim, np.eye(dim)*5, dim),
+        initial_samples.append(dis.DirCatTMM(obs, [1]*n_comp, dist.mvt(np.mean(means,0), np.eye(dim)*5, dim),
                                   dist.invwishart(np.eye(dim) * 5, dim+1 ),
                                   stats.gamma(1,scale=1)))
 #    (naive_samp, naive_lpost) = pmc.sample(num_imp_samp, initial_samples,
@@ -183,53 +128,6 @@ def test_DirCatTMMProposal():
           infl_samp[-1].comp_indic.sum(0), stats.entropy(p_comp, infl_samp[-1].comp_indic.sum(0))+1, count["local_llhood"], count["local_lpost"],
           "\n\n--STANDARD--\n",
           stand_samp[-1].comp_indic.sum(0), stats.entropy(p_comp, stand_samp[-1].comp_indic.sum(0))+1, count["standard_llhood"], count["standard_lpost"],"\n\n")   
-    return {"infl":(infl_samp, infl_lpost), "standard":(stand_samp, stand_lpost)}
+    #return {"infl":(infl_samp, infl_lpost), "standard":(stand_samp, stand_lpost)}
           
 
-def test_DirCatTMMProposal_Iris():
-    from sklearn.datasets import load_iris
-    num_imp_samp = 5
-    num_loc_proposals = 3
-    n_comp = 3
-    p_comp = np.array([1/n_comp] * n_comp)
-    dim = 4
-    iris = load_iris()
-    obs = iris["data"]
-    labels = iris["target"]
-    means = np.array([obs[i*50:(i+1)*50].mean(0) for i in range(3)])
-
-    count = {"local_lpost" :0, "local_llhood" :0, "naive_lpost" :0 ,"naive_llhood" :0,"standard_lpost" :0 ,"standard_llhood" :0}
-
-    def count_closure(name):
-        def rval():
-            count[name] = count[name] + 1
-        return rval
-    
-    initial_samples = []
-    for _ in range(10):
-        initial_samples.append(dis.DirCatTMM(obs, [1]*n_comp, dist.mvt(obs.mean(0), np.diag(obs.var(0)), 20),
-                                  dist.invwishart(np.eye(dim) * 5, dim + 1),
-                                  stats.gamma(1, scale=1)))
-    (naive_samp, naive_lpost) = pmc.sample(num_imp_samp, initial_samples,
-                               dis.DirCatTMMProposal(naive_multi_proposals = num_loc_proposals,
-                                                     lpost_count = count_closure("naive_lpost"),
-                                                     llhood_count =  count_closure("naive_llhood")),
-                               population_size = 4)
-    (infl_samp, infl_lpost) = pmc.sample(num_imp_samp, initial_samples,
-                               dis.DirCatTMMProposal(num_local_proposals = num_loc_proposals,
-                                                     lpost_count = count_closure("local_lpost"),
-                                                     llhood_count =  count_closure("local_llhood")),
-                               population_size = 4)
-                               
-    (stand_samp, stand_lpost) = pmc.sample(num_imp_samp * num_loc_proposals, initial_samples,
-                               dis.DirCatTMMProposal(lpost_count = count_closure("standard_lpost"),
-                                                     llhood_count =  count_closure("standard_llhood")),
-                               population_size = 4)
-
-    print("===============\n",p_comp, means,
-          "\n\n--NAIVE--\n",
-          naive_samp[-1].comp_indic.sum(0), stats.entropy(p_comp, naive_samp[-1].comp_indic.sum(0))+1, count["naive_llhood"], count["naive_lpost"],
-          "\n\n--LOCAL--\n",
-          infl_samp[-1].comp_indic.sum(0), stats.entropy(p_comp, infl_samp[-1].comp_indic.sum(0))+1, count["local_llhood"], count["local_lpost"],
-          "\n\n--STANDARD--\n",
-          stand_samp[-1].comp_indic.sum(0), stats.entropy(p_comp, stand_samp[-1].comp_indic.sum(0))+1, count["standard_llhood"], count["standard_lpost"],"\n\n")   
