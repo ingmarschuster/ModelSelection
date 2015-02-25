@@ -37,11 +37,22 @@ def gr_ass(samps):
     for s in samps:
         if "gr" in s.other:
             assert(s.other["gr"].size == s.sample.size)
+
+def compute_ess(logweights, normalize = False, ret_logval = False):
+    if normalize:
+        logweights = logweights - logsumexp(logweights)
+    rval = -logsumexp(2*logweights)
+    if ret_logval:
+        return rval
+    else:
+        return exp(rval)
             
-            
-def importance_resampling(resampled_size, pop):
+def importance_resampling(resampled_size, pop, ess = False):
     prop_w = np.array([s.lweight for s in pop])
-    prop_w = exp(prop_w - logsumexp(prop_w))
+    prop_w = prop_w - logsumexp(prop_w)
+    if ess:
+        rval_ess = compute_ess(prop_w)
+    prop_w = exp(prop_w)
     # Importance Resampling
     while True:
         try:
@@ -53,13 +64,19 @@ def importance_resampling(resampled_size, pop):
     new_samp = []
     for idx in range(resampled_size):
         new_samp.append(pop[dist.rvs()])
-    return new_samp
+        
+    if ess:
+        return (new_samp, rval_ess)
+    else:
+        return new_samp
     
     
 
-def sample(num_samples, initial_guesses, proposal_method, population_size = 20, stop_flag = flags.NeverStopFlag(), quiet = True):
+def sample(num_samples, initial_guesses, proposal_method, population_size = 20, stop_flag = flags.NeverStopFlag(), quiet = True, ess = True):
     num_initial = len(initial_guesses)
     rval =  [PmcSample(sample=s) for s in initial_guesses]
+    if ess:
+        list_ess = []
     
     while len(rval) - num_initial < num_samples and not stop_flag.stop():
 
@@ -78,7 +95,12 @@ def sample(num_samples, initial_guesses, proposal_method, population_size = 20, 
             pop.extend(tmp)
 
         proposal_method.observe(pop) # adapt proposal
-        rval.extend(importance_resampling(population_size, pop))
+        if ess:
+            (samps, cur_ess) = importance_resampling(population_size, pop, ess = True)
+            list_ess.append(cur_ess)
+        else:
+            samps = importance_resampling(population_size, pop, ess = True)
+        rval.extend(samps)
         if not quiet:
             print(len(rval), "samples", file=sys.stderr)
         
@@ -89,7 +111,11 @@ def sample(num_samples, initial_guesses, proposal_method, population_size = 20, 
     except:
         pass
     #assert()
-    return (np.array([s.sample for s in rval[num_initial:]]), np.array([s.lpost for s in rval[num_initial:]]))
+    rval = [np.array([s.sample for s in rval[num_initial:]]), np.array([s.lpost for s in rval[num_initial:]])]
+    if ess:
+        rval.append(np.mean(list_ess))
+    return rval
+    
 
 
 def sample_sis(num_samples, initial_particles, proposal_method, stop_flag = flags.NeverStopFlag(), quiet = True):

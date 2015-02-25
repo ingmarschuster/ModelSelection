@@ -41,8 +41,7 @@ num_post_samp = 600
 
 num_obs = 1
 num_dims = 5 #30
-num_datasets = 50#50
-#np.random.seed(1)
+num_datasets = 5#50
 posteriors = gen_gauss_lpost(num_datasets, num_dims, cov_var_const = 4, with_grad=True)
 #simple_gaussian(dims = num_dims, observations_range = range(num_obs, num_obs + 1, 10), num_datasets = num_datasets, cov_var_const = 4)
 nograd_sqerr = []
@@ -64,6 +63,10 @@ num_est_samp = np.linspace(-100.,0.,15,) # None #-np.logspace(1, np.log10(num_po
 prior = mvnorm(np.array([0]*num_dims), np.eye(num_dims) * 50)
 
 ad = []
+ess_nograd = []
+ess_grad = []
+
+pop_size = 4
 
 
 
@@ -72,9 +75,10 @@ for num_obs in [1]:
     for estim in ["pmc","cgpmc","gpmc","slicesamp", "slice_half"]:
         est[num_obs][estim] = []
     for lpost in posteriors:
-        naive_proposals = pmc.CategoricalOracle(pmc.GaussRwProposal(None,np.eye(num_dims)*15))
+        naive_proposals = pmc.CategoricalOracle(pmc.GaussRwProposal(None,np.eye(num_dims)*10))
 
-        grad_proposals = pmc.CategoricalOracle(pmc.GrAsStupidProposal(None,15, 15))
+        grad_proposals = pmc.CategoricalOracle(pmc.GrAsStupidProposal(None,10, 10))
+
 
         #naive_proposals = pmc.CategoricalOracle(pmc.NaiveRandomWalkProposal(None, mvnorm([0]*num_dims, np.eye(num_dims))))
 
@@ -124,24 +128,27 @@ for num_obs in [1]:
         #ga_theta = gradient_ascent(prior.rvs(), lpost_and_grad)
         #print( o_m, ga_theta[0])
         #continue #exit(0)
-        (s_nograd, t_nograd) = pmc.sample(num_post_samp**2,
+        (s_nograd, t_nograd, ess_nograd_cur) = pmc.sample(num_post_samp**2,
                                 [prior.rvs() for _ in range(10)],
                                 naive_proposals,
-                                population_size = 4, stop_flag = stop_flag)
+                                population_size = pop_size, stop_flag = stop_flag, ess = True)
         print(stop_flag.elapsed())
         est[num_obs]["pmc"].append(mean_of_samples(s_nograd, num_est_samp))
         ng_llc = (ng_llc[0] + int(stop_flag.lhood), ng_llc[1] + int(stop_flag.grad))
+        ess_nograd.append(ess_nograd_cur)
         stop_flag.reset()
         
         
         
-        (s_grad, t_grad) = pmc.sample(num_post_samp**2,
+        (s_grad, t_grad, ess_grad_cur) = pmc.sample(num_post_samp**2,
                               [prior.rvs() for _ in range(10)],
                               grad_proposals,
-                              population_size = 4, stop_flag = stop_flag)
+                              population_size = pop_size, stop_flag = stop_flag, ess = True)
         print(stop_flag.elapsed())
+
         est[num_obs]["gpmc"].append(mean_of_samples(s_grad, num_est_samp))
         grad_llc = (grad_llc[0] + int(stop_flag.lhood), grad_llc[1]+ int(stop_flag.grad))
+        ess_grad.append(ess_grad_cur)
         stop_flag.reset()
         
 
@@ -156,5 +163,5 @@ for num_obs in [1]:
         print("Nograd mse", np.mean(nograd_sqerr),ng_llc,  "grad", np.mean(grad_sqerr), grad_llc, "slice", np.mean(slice_sqerr), ss_llc)
         #print("sum Ng mse", np.mean(nograd_sqerr),ng_llc,  cgrad_llc, "grad", np.mean(grad_sqerr), grad_llc, "slice", np.mean(slice_sqerr), ss_llc)#"cgrad mse", np.mean(cgrad_sqerr),
 print()
-print("Nograd mse", np.mean(nograd_sqerr),ng_llc,  cgrad_llc, "\ngrad mse", np.mean(grad_sqerr), grad_llc, "\nslice", np.mean(slice_sqerr), ss_llc)#"\ncgrad mse", np.mean(cgrad_sqerr),
+print("Nograd mse", np.mean(nograd_sqerr),ng_llc,  cgrad_llc, np.mean(ess_nograd), "\ngrad mse", np.mean(grad_sqerr), grad_llc, np.mean(ess_grad), "\nslice", np.mean(slice_sqerr), ss_llc)#"\ncgrad mse", np.mean(cgrad_sqerr),
 #print()
